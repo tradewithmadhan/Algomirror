@@ -1,0 +1,172 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom styles for AlgoMirror */
+
+/* Animation utilities */
+.animate-out {
+  animation: slideOut 0.3s ease-in-out forwards;
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-base-300/50;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-base-content/30 rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-base-content/50;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply border-2 border-base-300 border-t-primary rounded-full w-4 h-4;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Card hover effects */
+.card {
+  @apply transition-all duration-200;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  @apply shadow-xl;
+}
+
+/* Badge variations */
+.badge-outline {
+  @apply border border-current bg-transparent;
+}
+
+/* Responsive table */
+.table-responsive {
+  @apply overflow-x-auto;
+}
+
+.table-responsive table {
+  min-width: 600px;
+}
+
+/* Status indicators */
+.status-connected {
+  @apply text-success;
+}
+
+.status-disconnected {
+  @apply text-error;
+}
+
+.status-warning {
+  @apply text-warning;
+}
+
+/* Typography */
+.font-mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Gradient backgrounds */
+.bg-gradient-primary {
+  @apply bg-gradient-to-br from-primary to-primary/80;
+}
+
+.bg-gradient-secondary {
+  @apply bg-gradient-to-br from-secondary to-secondary/80;
+}
+
+/* Custom components */
+.account-card {
+  @apply border-2 border-transparent transition-colors duration-200;
+}
+
+.account-card.primary {
+  @apply border-primary;
+}
+
+.account-card:hover {
+  @apply border-primary/50;
+}
+
+/* Mobile-first responsive design */
+@media (max-width: 768px) {
+  .stats {
+    @apply grid-cols-1;
+  }
+  
+  .stats .stat {
+    @apply place-items-center text-center;
+  }
+  
+  .navbar-center {
+    @apply hidden;
+  }
+}
+
+/* Print styles */
+@media print {
+  .drawer-toggle,
+  .navbar,
+  .footer,
+  .btn,
+  .dropdown {
+    @apply hidden !important;
+  }
+  
+  .drawer-content {
+    @apply ml-0 !important;
+  }
+}
+
+/* Focus styles for accessibility */
+.btn:focus,
+.input:focus,
+.select:focus,
+.textarea:focus {
+  @apply outline outline-2 outline-primary outline-offset-2;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .card {
+    @apply border border-base-content;
+  }
+  
+  .btn {
+    @apply border-2 border-current;
+  }
+}
+
+/* Ensure proper min-height for pages */
+.min-h-screen {
+  min-height: 100vh;
+}
+
+/* Hero gradient overlay */
+.hero-overlay {
+  @apply bg-gradient-to-b from-transparent via-base-100/50 to-base-100;
+}

@@ -1,0 +1,192 @@
+@import url('https://cdn.jsdelivr.net/npm/daisyui@4.4.19/dist/full.css');
+@import url('https://cdn.jsdelivr.net/npm/tailwindcss@3.3.6/base.css');
+@import url('https://cdn.jsdelivr.net/npm/tailwindcss@3.3.6/components.css');
+@import url('https://cdn.jsdelivr.net/npm/tailwindcss@3.3.6/utilities.css');
+
+/* Custom styles for AlgoMirror */
+:root {
+  --primary: 59 130 246;
+  --secondary: 139 69 19;
+  --accent: 34 197 94;
+  --neutral: 64 64 64;
+  --base-100: 255 255 255;
+  --info: 59 130 246;
+  --success: 34 197 94;
+  --warning: 245 158 11;
+  --error: 239 68 68;
+}
+
+[data-theme="dark"] {
+  --primary: 96 165 250;
+  --secondary: 217 119 6;
+  --accent: 52 211 153;
+  --neutral: 55 65 81;
+  --base-100: 31 41 55;
+  --info: 96 165 250;
+  --success: 52 211 153;
+  --warning: 251 191 36;
+  --error: 248 113 113;
+}
+
+/* Animation utilities */
+.animate-out {
+  animation: slideOut 0.3s ease-in-out forwards;
+}
+
+@keyframes slideOut {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgb(var(--base-300) / 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--base-content) / 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--base-content) / 0.5);
+}
+
+/* Loading spinner */
+.spinner {
+  border: 2px solid rgb(var(--base-300));
+  border-top: 2px solid rgb(var(--primary));
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Card hover effects */
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  transition: all 0.2s ease-in-out;
+}
+
+/* Badge variations */
+.badge-outline {
+  border: 1px solid currentColor;
+  background: transparent;
+}
+
+/* Responsive table */
+.table-responsive {
+  overflow-x: auto;
+}
+
+.table-responsive table {
+  min-width: 600px;
+}
+
+/* Status indicators */
+.status-connected {
+  color: rgb(var(--success));
+}
+
+.status-disconnected {
+  color: rgb(var(--error));
+}
+
+.status-warning {
+  color: rgb(var(--warning));
+}
+
+/* Typography */
+.font-mono {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+/* Gradient backgrounds */
+.bg-gradient-primary {
+  background: linear-gradient(135deg, rgb(var(--primary)), rgb(var(--primary) / 0.8));
+}
+
+.bg-gradient-secondary {
+  background: linear-gradient(135deg, rgb(var(--secondary)), rgb(var(--secondary) / 0.8));
+}
+
+/* Custom components */
+.account-card {
+  border: 2px solid transparent;
+  transition: border-color 0.2s ease-in-out;
+}
+
+.account-card.primary {
+  border-color: rgb(var(--primary));
+}
+
+.account-card:hover {
+  border-color: rgb(var(--primary) / 0.5);
+}
+
+/* Mobile-first responsive design */
+@media (max-width: 768px) {
+  .stats {
+    grid-template-columns: 1fr;
+  }
+  
+  .stats .stat {
+    place-items: center;
+    text-align: center;
+  }
+  
+  .navbar-center {
+    display: none;
+  }
+}
+
+/* Print styles */
+@media print {
+  .drawer-toggle,
+  .navbar,
+  .footer,
+  .btn,
+  .dropdown {
+    display: none !important;
+  }
+  
+  .drawer-content {
+    margin-left: 0 !important;
+  }
+}
+
+/* Focus styles for accessibility */
+.btn:focus,
+.input:focus,
+.select:focus,
+.textarea:focus {
+  outline: 2px solid rgb(var(--primary));
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .card {
+    border: 1px solid rgb(var(--base-content));
+  }
+  
+  .btn {
+    border: 2px solid currentColor;
+  }
+}

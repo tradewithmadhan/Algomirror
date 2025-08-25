@@ -1,0 +1,266 @@
+{% extends "layout.html" %}
+
+{% block title %}Dashboard - AlgoMirror{% endblock %}
+
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Welcome Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold">Welcome back, {{ current_user.username }}!</h1>
+            <p class="text-base-content/70 mt-1">Here's an overview of your trading accounts</p>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="refreshAllData()" class="btn btn-ghost btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh All
+            </button>
+            <a href="{{ url_for('accounts.add') }}" class="btn btn-primary btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                Add Account
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="stats shadow w-full">
+        <div class="stat">
+            <div class="stat-figure text-primary">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-4m-5 0H3m2 0h4M9 3h6M9 5h6M9 7h6M9 9h6"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Total Accounts</div>
+            <div class="stat-value text-primary">{{ dashboard_data.total_accounts }}</div>
+            <div class="stat-desc">{{ dashboard_data.connected_accounts }} connected</div>
+        </div>
+
+        <div class="stat">
+            <div class="stat-figure text-secondary">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 100 4m0-4v2m0-6V4"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Available Funds</div>
+            <div class="stat-value">₹{{ "%.2f"|format(dashboard_data.total_funds) }}</div>
+            <div class="stat-desc">Across all accounts</div>
+        </div>
+
+        <div class="stat">
+            <div class="stat-figure {{ 'text-success' if dashboard_data.total_pnl >= 0 else 'text-error' }}">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="{{ 'M13 7h8m0 0v8m0-8l-8 8-4-4-6 6' if dashboard_data.total_pnl >= 0 else 'M13 17h8m0 0V9m0 8l-8-8-4 4-6-6' }}"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Total P&L</div>
+            <div class="stat-value {{ 'text-success' if dashboard_data.total_pnl >= 0 else 'text-error' }}">
+                ₹{{ "%.2f"|format(dashboard_data.total_pnl) }}
+            </div>
+            <div class="stat-desc">Mark-to-market</div>
+        </div>
+
+        <div class="stat">
+            <div class="stat-figure text-accent">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="inline-block w-8 h-8 stroke-current">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Positions</div>
+            <div class="stat-value text-accent">{{ dashboard_data.total_positions }}</div>
+            <div class="stat-desc">{{ dashboard_data.total_holdings }} holdings</div>
+        </div>
+    </div>
+
+    <!-- Accounts Overview -->
+    {% if dashboard_data.accounts_summary %}
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="card-title">Accounts Overview</h2>
+                <a href="{{ url_for('accounts.manage') }}" class="btn btn-ghost btn-sm">Manage All</a>
+            </div>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                {% for account in dashboard_data.accounts_summary %}
+                <div class="card bg-base-200 shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h3 class="font-semibold">{{ account.name }}</h3>
+                                <p class="text-sm opacity-70">{{ account.broker }}</p>
+                            </div>
+                            <div class="badge badge-{{ 'success' if account.status == 'connected' else 'error' if account.status == 'failed' else 'warning' }} badge-sm">
+                                {{ account.status }}
+                            </div>
+                        </div>
+                        
+                        <div class="grid grid-cols-3 gap-2 mt-4 text-center">
+                            <div>
+                                <div class="text-xs opacity-70">Funds</div>
+                                <div class="font-mono text-sm">₹{{ "%.0f"|format(account.funds) }}</div>
+                            </div>
+                            <div>
+                                <div class="text-xs opacity-70">P&L</div>
+                                <div class="font-mono text-sm {{ 'text-success' if account.pnl >= 0 else 'text-error' }}">
+                                    ₹{{ "%.2f"|format(account.pnl) }}
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs opacity-70">Positions</div>
+                                <div class="font-mono text-sm">{{ account.positions }}</div>
+                            </div>
+                        </div>
+                        
+                        {% if account.last_update %}
+                        <div class="text-xs opacity-50 mt-2">
+                            Updated: {{ account.last_update.strftime('%H:%M') }}
+                        </div>
+                        {% endif %}
+                        
+                        <div class="card-actions justify-end mt-2">
+                            <button onclick="refreshAccountData({{ account.id }})" class="btn btn-ghost btn-xs">Refresh</button>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Quick Actions -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <a href="{{ url_for('trading.funds') }}" class="card bg-gradient-to-r from-primary to-primary-focus text-primary-content shadow-xl hover:shadow-2xl transition-shadow">
+            <div class="card-body items-center text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
+                </svg>
+                <h3 class="font-bold">Funds</h3>
+                <p class="text-sm opacity-90">View funds across accounts</p>
+            </div>
+        </a>
+        
+        <a href="{{ url_for('trading.positions') }}" class="card bg-gradient-to-r from-secondary to-secondary-focus text-secondary-content shadow-xl hover:shadow-2xl transition-shadow">
+            <div class="card-body items-center text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <h3 class="font-bold">Positions</h3>
+                <p class="text-sm opacity-90">Monitor open positions</p>
+            </div>
+        </a>
+        
+        <a href="{{ url_for('trading.orderbook') }}" class="card bg-gradient-to-r from-accent to-accent-focus text-accent-content shadow-xl hover:shadow-2xl transition-shadow">
+            <div class="card-body items-center text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                <h3 class="font-bold">Orders</h3>
+                <p class="text-sm opacity-90">View order history</p>
+            </div>
+        </a>
+        
+        <a href="{{ url_for('trading.holdings') }}" class="card bg-gradient-to-r from-success to-success-focus text-success-content shadow-xl hover:shadow-2xl transition-shadow">
+            <div class="card-body items-center text-center">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                <h3 class="font-bold">Holdings</h3>
+                <p class="text-sm opacity-90">Investment portfolio</p>
+            </div>
+        </a>
+    </div>
+
+    <!-- Recent Activity -->
+    {% if recent_activities %}
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Recent Activity</h2>
+            
+            <div class="space-y-3">
+                {% for activity in recent_activities %}
+                <div class="flex items-center gap-3 p-3 bg-base-200 rounded-lg">
+                    <div class="flex-shrink-0">
+                        {% if activity.status == 'success' %}
+                        <div class="badge badge-success badge-sm"></div>
+                        {% else %}
+                        <div class="badge badge-error badge-sm"></div>
+                        {% endif %}
+                    </div>
+                    <div class="flex-grow">
+                        <div class="font-medium">{{ activity.action.replace('_', ' ').title() }}</div>
+                        {% if activity.details %}
+                        <div class="text-sm opacity-70">
+                            {% if activity.details.account_name %}
+                            Account: {{ activity.details.account_name }}
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="text-sm opacity-60">
+                        {{ activity.created_at.strftime('%H:%M') }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function refreshAccountData(accountId) {
+    showToast('Refreshing account data...', 'info');
+    
+    fetchWithCSRF(`/accounts/refresh-data/${accountId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast('Account data refreshed!', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Failed to refresh data: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            showToast('Error: ' + error.message, 'error');
+        });
+}
+
+function refreshAllData() {
+    showToast('Refreshing all account data...', 'info');
+    
+    // Refresh data for all accounts
+    const refreshPromises = [];
+    {% for account in dashboard_data.accounts_summary %}
+    refreshPromises.push(
+        fetchWithCSRF(`/accounts/refresh-data/{{ account.id }}`)
+            .then(response => response.json())
+    );
+    {% endfor %}
+    
+    Promise.all(refreshPromises)
+        .then(results => {
+            const successful = results.filter(r => r.status === 'success').length;
+            const total = results.length;
+            
+            if (successful === total) {
+                showToast('All account data refreshed successfully!', 'success');
+            } else {
+                showToast(`${successful}/${total} accounts refreshed successfully`, 'warning');
+            }
+            
+            setTimeout(() => location.reload(), 1000);
+        })
+        .catch(error => {
+            showToast('Error refreshing data: ' + error.message, 'error');
+        });
+}
+</script>
+{% endblock %}

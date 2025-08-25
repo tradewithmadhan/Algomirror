@@ -1,0 +1,169 @@
+{% extends "layout.html" %}
+
+{% block title %}Trade Book - AlgoMirror{% endblock %}
+
+{% block page_title %}Trade Book{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold">Trade Book</h1>
+            <p class="text-base-content/70 mt-1">
+                {{ "Showing trades for selected account" if single_account else "Showing trades across all accounts" }}
+            </p>
+        </div>
+        
+        <div class="flex gap-2">
+            <!-- Account Selector -->
+            {% if not single_account and accounts|length > 1 %}
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                    View Single Account
+                </div>
+                <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow bg-base-100 rounded-box w-52">
+                    {% for account in accounts %}
+                    <li>
+                        <a href="{{ url_for('trading.tradebook', account=account.id) }}">
+                            {{ account.account_name }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if single_account %}
+            <a href="{{ url_for('trading.tradebook') }}" class="btn btn-outline btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                View All Accounts
+            </a>
+            {% endif %}
+            
+            <button onclick="location.reload()" class="btn btn-primary btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    {% if tradebook_data %}
+    <!-- Total P&L Summary -->
+    <div class="stats shadow w-full">
+        <div class="stat">
+            <div class="stat-title">Total Trades</div>
+            <div class="stat-value">{{ tradebook_data|length }}</div>
+        </div>
+        
+        {% set buy_count = tradebook_data | selectattr('action', 'equalto', 'BUY') | list | length %}
+        {% set sell_count = tradebook_data | selectattr('action', 'equalto', 'SELL') | list | length %}
+        
+        <div class="stat">
+            <div class="stat-title">Buy Trades</div>
+            <div class="stat-value text-success">{{ buy_count }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Sell Trades</div>
+            <div class="stat-value text-error">{{ sell_count }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Net P&L</div>
+            <div class="stat-value {{ 'text-success' if total_pnl >= 0 else 'text-error' }}">
+                ₹{{ "%.2f"|format(total_pnl) }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Trades Table -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Executed Trades</h2>
+            
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            {% if not single_account %}
+                            <th>Account</th>
+                            {% endif %}
+                            <th>Symbol</th>
+                            <th>Exchange</th>
+                            <th>Action</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Avg Price</th>
+                            <th>Trade Value</th>
+                            <th>Order ID</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for trade in tradebook_data %}
+                        <tr class="hover">
+                            <td class="text-xs">{{ trade.timestamp if trade.timestamp else trade.filltime if trade.filltime else '-' }}</td>
+                            {% if not single_account %}
+                            <td>
+                                <div class="text-xs opacity-70">{{ trade.account_name }}</div>
+                                <div class="text-xs opacity-50">{{ trade.broker }}</div>
+                            </td>
+                            {% endif %}
+                            <td class="font-semibold">{{ trade.symbol }}</td>
+                            <td>{{ trade.exchange }}</td>
+                            <td>
+                                <span class="badge {{ 'badge-success' if trade.action == 'BUY' else 'badge-error' }} badge-sm">
+                                    {{ trade.action }}
+                                </span>
+                            </td>
+                            <td>{{ trade.product }}</td>
+                            <td class="font-mono">{{ trade.quantity }}</td>
+                            <td class="font-mono">₹{{ "%.2f"|format(trade.average_price|float) if trade.average_price else "0.00" }}</td>
+                            <td class="font-mono">₹{{ "%.2f"|format(trade.trade_value|float) if trade.trade_value else "0.00" }}</td>
+                            <td class="font-mono text-xs">{{ trade.orderid }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    {% else %}
+    <!-- No Trades -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body text-center py-16">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mx-auto mb-4 text-base-content/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <h2 class="text-2xl font-bold mb-2">No Trades Found</h2>
+            <p class="text-base-content/70 max-w-md mx-auto">
+                {% if accounts|length == 0 %}
+                You need to add a trading account first to view trades.
+                {% else %}
+                No executed trades found in your trading accounts for today.
+                {% endif %}
+            </p>
+            {% if accounts|length == 0 %}
+            <div class="mt-6">
+                <a href="{{ url_for('accounts.add') }}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Add Account
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

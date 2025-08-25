@@ -1,0 +1,178 @@
+{% extends "layout.html" %}
+
+{% block title %}Order Book - AlgoMirror{% endblock %}
+
+{% block page_title %}Order Book{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold">Order Book</h1>
+            <p class="text-base-content/70 mt-1">
+                {{ "Showing orders for selected account" if single_account else "Showing orders across all accounts" }}
+            </p>
+        </div>
+        
+        <div class="flex gap-2">
+            <!-- Account Selector -->
+            {% if not single_account and accounts|length > 1 %}
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                    View Single Account
+                </div>
+                <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow bg-base-100 rounded-box w-52">
+                    {% for account in accounts %}
+                    <li>
+                        <a href="{{ url_for('trading.orderbook', account=account.id) }}">
+                            {{ account.account_name }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if single_account %}
+            <a href="{{ url_for('trading.orderbook') }}" class="btn btn-outline btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                View All Accounts
+            </a>
+            {% endif %}
+            
+            <button onclick="location.reload()" class="btn btn-primary btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    {% if statistics %}
+    <!-- Statistics -->
+    <div class="stats shadow w-full">
+        <div class="stat">
+            <div class="stat-title">Buy Orders</div>
+            <div class="stat-value text-success">{{ statistics.total_buy_orders }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Sell Orders</div>
+            <div class="stat-value text-error">{{ statistics.total_sell_orders }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Completed</div>
+            <div class="stat-value text-primary">{{ statistics.total_completed_orders }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Open</div>
+            <div class="stat-value text-warning">{{ statistics.total_open_orders }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Cancelled</div>
+            <div class="stat-value text-base-content/50">{{ statistics.total_cancelled_orders }}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if orderbook_data %}
+    <!-- Orders Table -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">All Orders</h2>
+            
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            {% if not single_account %}
+                            <th>Account</th>
+                            {% endif %}
+                            <th>Symbol</th>
+                            <th>Exchange</th>
+                            <th>Action</th>
+                            <th>Type</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Price</th>
+                            <th>Status</th>
+                            <th>Order ID</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in orderbook_data %}
+                        <tr class="hover">
+                            <td class="text-xs">{{ order.timestamp if order.timestamp else '-' }}</td>
+                            {% if not single_account %}
+                            <td>
+                                <div class="text-xs opacity-70">{{ order.account_name }}</div>
+                                <div class="text-xs opacity-50">{{ order.broker }}</div>
+                            </td>
+                            {% endif %}
+                            <td class="font-semibold">{{ order.symbol }}</td>
+                            <td>{{ order.exchange }}</td>
+                            <td>
+                                <span class="badge {{ 'badge-success' if order.action == 'BUY' else 'badge-error' }} badge-sm">
+                                    {{ order.action }}
+                                </span>
+                            </td>
+                            <td>{{ order.pricetype }}</td>
+                            <td>{{ order.product }}</td>
+                            <td class="font-mono">{{ order.quantity }}</td>
+                            <td class="font-mono">₹{{ "%.2f"|format(order.price|float) }}</td>
+                            <td>
+                                {% set status_class = 'badge-success' if order.order_status == 'complete' else 'badge-warning' if order.order_status in ['open', 'pending'] else 'badge-error' if order.order_status == 'rejected' else 'badge-ghost' %}
+                                <span class="badge {{ status_class }} badge-sm">
+                                    {{ order.order_status }}
+                                </span>
+                            </td>
+                            <td class="font-mono text-xs">{{ order.orderid }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    {% else %}
+    <!-- No Orders -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body text-center py-16">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mx-auto mb-4 text-base-content/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h2 class="text-2xl font-bold mb-2">No Orders Found</h2>
+            <p class="text-base-content/70 max-w-md mx-auto">
+                {% if accounts|length == 0 %}
+                You need to add a trading account first to view orders.
+                {% else %}
+                No orders found in your trading accounts. Orders will appear here once you place them through your broker.
+                {% endif %}
+            </p>
+            {% if accounts|length == 0 %}
+            <div class="mt-6">
+                <a href="{{ url_for('accounts.add') }}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Add Account
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

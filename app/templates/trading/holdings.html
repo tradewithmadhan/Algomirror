@@ -1,0 +1,175 @@
+{% extends "layout.html" %}
+
+{% block title %}Holdings - AlgoMirror{% endblock %}
+
+{% block page_title %}Holdings{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold">Holdings</h1>
+            <p class="text-base-content/70 mt-1">
+                {{ "Showing holdings for selected account" if single_account else "Showing holdings across all accounts" }}
+            </p>
+        </div>
+        
+        <div class="flex gap-2">
+            <!-- Account Selector -->
+            {% if not single_account and accounts|length > 1 %}
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                    View Single Account
+                </div>
+                <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow bg-base-100 rounded-box w-52">
+                    {% for account in accounts %}
+                    <li>
+                        <a href="{{ url_for('trading.holdings', account=account.id) }}">
+                            {{ account.account_name }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if single_account %}
+            <a href="{{ url_for('trading.holdings') }}" class="btn btn-outline btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                View All Accounts
+            </a>
+            {% endif %}
+            
+            <button onclick="location.reload()" class="btn btn-primary btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    {% if holdings_data or statistics %}
+    <!-- Portfolio Summary -->
+    <div class="stats shadow w-full">
+        <div class="stat">
+            <div class="stat-title">Total Holdings</div>
+            <div class="stat-value">{{ holdings_data|length }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Total Investment</div>
+            <div class="stat-value text-primary">₹{{ "%.2f"|format(statistics.totalinvvalue) }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Current Value</div>
+            <div class="stat-value text-info">₹{{ "%.2f"|format(statistics.totalholdingvalue) }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Total P&L</div>
+            <div class="stat-value {{ 'text-success' if statistics.totalprofitandloss >= 0 else 'text-error' }}">
+                ₹{{ "%.2f"|format(statistics.totalprofitandloss) }}
+            </div>
+            <div class="stat-desc">{{ "%.2f"|format(statistics.totalpnlpercentage) }}%</div>
+        </div>
+    </div>
+
+    {% if holdings_data %}
+    <!-- Holdings Table -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Your Holdings</h2>
+            
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            {% if not single_account %}
+                            <th>Account</th>
+                            {% endif %}
+                            <th>Symbol</th>
+                            <th>Exchange</th>
+                            <th>Qty</th>
+                            <th>Avg Price</th>
+                            <th>LTP</th>
+                            <th>Current Value</th>
+                            <th>P&L</th>
+                            <th>P&L %</th>
+                            <th>Day Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for holding in holdings_data %}
+                        <tr class="hover">
+                            {% if not single_account %}
+                            <td>
+                                <div class="text-xs opacity-70">{{ holding.account_name }}</div>
+                                <div class="text-xs opacity-50">{{ holding.broker }}</div>
+                            </td>
+                            {% endif %}
+                            <td class="font-semibold">{{ holding.symbol }}</td>
+                            <td>{{ holding.exchange }}</td>
+                            <td class="font-mono">{{ holding.quantity }}</td>
+                            <td class="font-mono">₹{{ "%.2f"|format(holding.avgprice|float) if holding.avgprice else "0.00" }}</td>
+                            <td class="font-mono">₹{{ "%.2f"|format(holding.ltp|float) if holding.ltp else "0.00" }}</td>
+                            <td class="font-mono">₹{{ "%.2f"|format((holding.quantity|float * holding.ltp|float)) if holding.ltp else "0.00" }}</td>
+                            <td class="font-mono {{ 'text-success' if holding.pnl|float >= 0 else 'text-error' }}">
+                                ₹{{ "%.2f"|format(holding.pnl|float) if holding.pnl else "0.00" }}
+                            </td>
+                            <td class="{{ 'text-success' if holding.pnlpercent|float >= 0 else 'text-error' }}">
+                                {{ "%.2f"|format(holding.pnlpercent|float) if holding.pnlpercent else "0.00" }}%
+                            </td>
+                            <td class="{{ 'text-success' if holding.get('close') and holding.get('close')|float > 0 and holding.ltp|float > holding.get('close')|float else 'text-error' if holding.get('close') and holding.get('close')|float > 0 and holding.ltp|float < holding.get('close')|float else '' }}">
+                                {% if holding.get('close') and holding.get('close')|float > 0 %}
+                                    {{ "%.2f"|format(((holding.ltp|float - holding.get('close')|float) / holding.get('close')|float) * 100) }}%
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <!-- No Holdings -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body text-center py-16">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mx-auto mb-4 text-base-content/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            </svg>
+            <h2 class="text-2xl font-bold mb-2">No Holdings Found</h2>
+            <p class="text-base-content/70 max-w-md mx-auto">
+                {% if accounts|length == 0 %}
+                You need to add a trading account first to view holdings.
+                {% else %}
+                You don't have any holdings in your trading accounts.
+                {% endif %}
+            </p>
+            {% if accounts|length == 0 %}
+            <div class="mt-6">
+                <a href="{{ url_for('accounts.add') }}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Add Account
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

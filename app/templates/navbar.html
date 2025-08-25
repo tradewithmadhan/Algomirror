@@ -1,0 +1,122 @@
+<div class="navbar-start">
+    <!-- Mobile menu button - only visible on small screens -->
+    <div class="dropdown md:hidden">
+        <label tabindex="0" class="btn btn-ghost btn-circle">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+        </label>
+        {% if current_user.is_authenticated %}
+        <ul tabindex="0" class="menu menu-sm dropdown-content mt-3 z-[1] p-2 shadow bg-base-100 rounded-box w-52">
+            <li><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('accounts.manage') }}">Accounts</a></li>
+            <li>
+                <a>Trading</a>
+                <ul class="p-2">
+                    <li><a href="{{ url_for('trading.funds') }}">Funds</a></li>
+                    <li><a href="{{ url_for('trading.orderbook') }}">Orderbook</a></li>
+                    <li><a href="{{ url_for('trading.tradebook') }}">Tradebook</a></li>
+                    <li><a href="{{ url_for('trading.positions') }}">Positions</a></li>
+                    <li><a href="{{ url_for('trading.holdings') }}">Holdings</a></li>
+                </ul>
+            </li>
+        </ul>
+        {% endif %}
+    </div>
+    <!-- Logo -->
+    <a href="{{ url_for('main.dashboard') if current_user.is_authenticated else url_for('main.index') }}" class="btn btn-ghost normal-case text-xl">
+        <img src="{{ url_for('static', filename='favicon/logo.svg') }}" alt="AlgoMirror" class="h-8 w-8">
+        <span class="font-semibold hidden sm:inline">AlgoMirror</span>
+    </a>
+</div>
+
+<!-- Desktop menu - only visible on medium screens and up -->
+<div class="navbar-center hidden md:flex">
+    {% if current_user.is_authenticated %}
+    <ul class="menu menu-horizontal px-1">
+        <li><a href="{{ url_for('main.dashboard') }}" class="{{ 'active' if request.endpoint == 'main.dashboard' }}">Dashboard</a></li>
+        <li><a href="{{ url_for('accounts.manage') }}" class="{{ 'active' if request.endpoint.startswith('accounts.') }}">Accounts</a></li>
+        <li class="dropdown dropdown-hover">
+            <label tabindex="0" class="btn btn-ghost">
+                Trading
+                <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+            </label>
+            <ul tabindex="0" class="dropdown-content z-[1] menu p-2 shadow bg-base-100 rounded-box w-52">
+                <li><a href="{{ url_for('trading.funds') }}">Funds</a></li>
+                <li><a href="{{ url_for('trading.orderbook') }}">Orderbook</a></li>
+                <li><a href="{{ url_for('trading.tradebook') }}">Tradebook</a></li>
+                <li><a href="{{ url_for('trading.positions') }}">Positions</a></li>
+                <li><a href="{{ url_for('trading.holdings') }}">Holdings</a></li>
+            </ul>
+        </li>
+    </ul>
+    {% endif %}
+</div>
+
+<div class="navbar-end">
+    {% if current_user.is_authenticated %}
+    <!-- Account selector -->
+    <div class="dropdown dropdown-end mr-2 hidden sm:block">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-4m-5 0H3m2 0h4M9 3h6M9 5h6M9 7h6M9 9h6" />
+            </svg>
+            <span class="hidden lg:inline ml-1">Accounts</span>
+        </div>
+        <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow bg-base-100 rounded-box w-52">
+            {% for account in current_user.get_active_accounts() %}
+            <li>
+                <a href="#" onclick="selectAccount('{{ account.id }}')" class="flex items-center justify-between">
+                    <span>{{ account.account_name }}</span>
+                    <span class="badge badge-{{ 'success' if account.connection_status == 'connected' else 'error' }} badge-xs">
+                        {{ account.connection_status }}
+                    </span>
+                </a>
+            </li>
+            {% endfor %}
+            {% if not current_user.get_active_accounts() %}
+            <li><a href="{{ url_for('accounts.add') }}">Add First Account</a></li>
+            {% endif %}
+        </ul>
+    </div>
+    
+    <!-- Theme toggle -->
+    <button onclick="toggleTheme()" class="btn btn-ghost btn-circle btn-sm" aria-label="Toggle theme">
+        <!-- Sun icon for light theme -->
+        <svg id="theme-icon-light" class="h-5 w-5 hidden" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"></path>
+        </svg>
+        <!-- Moon icon for dark theme -->
+        <svg id="theme-icon-dark" class="h-5 w-5 hidden" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+        </svg>
+    </button>
+    
+    <!-- User menu -->
+    <div class="dropdown dropdown-end">
+        <div tabindex="0" role="button" class="btn btn-ghost btn-circle avatar">
+            <div class="w-8 h-8 rounded-full bg-primary text-primary-content flex items-center justify-center">
+                <span class="text-sm font-medium">{{ current_user.username[0].upper() }}</span>
+            </div>
+        </div>
+        <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow bg-base-100 rounded-box w-52">
+            <li><a href="{{ url_for('auth.change_password') }}">Profile</a></li>
+            <li><a href="{{ url_for('accounts.manage') }}">Manage Accounts</a></li>
+            <div class="divider my-1"></div>
+            <li>
+                <form method="POST" action="{{ url_for('auth.logout') }}" class="m-0">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <button type="submit" class="text-error w-full text-left">Logout</button>
+                </form>
+            </li>
+        </ul>
+    </div>
+    {% else %}
+    <div class="space-x-2">
+        <a href="{{ url_for('auth.login') }}" class="btn btn-ghost btn-sm">Login</a>
+        <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-sm">Sign Up</a>
+    </div>
+    {% endif %}
+</div>

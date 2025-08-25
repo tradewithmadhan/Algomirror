@@ -1,0 +1,210 @@
+{% extends "layout.html" %}
+
+{% block title %}Add Account - AlgoMirror{% endblock %}
+
+{% block page_title %}Add Account{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="breadcrumbs text-sm mb-6">
+        <ul>
+            <li><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('accounts.manage') }}">Accounts</a></li>
+            <li>Add Account</li>
+        </ul>
+    </div>
+    
+    <!-- Pre-requisites Alert -->
+    <div class="alert alert-warning mb-6">
+        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+        </svg>
+        <div>
+            <h3 class="font-bold">Before Adding an Account</h3>
+            <div class="text-sm">
+                <p>• Ensure your <strong>OpenAlgo application is running</strong> on the specified Host URL</p>
+                <p>• <strong>Login to OpenAlgo</strong> and obtain a valid API key from the API section</p>
+                <p>• Use the correct <strong>Host URL</strong> (default: http://127.0.0.1:5000)</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl mb-6">Add Trading Account</h2>
+            
+            <form method="POST">
+                {{ form.hidden_tag() }}
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Account Name</span>
+                        </label>
+                        {{ form.account_name(class="input input-bordered", placeholder="My Trading Account") }}
+                        {% if form.account_name.errors %}
+                            {% for error in form.account_name.errors %}
+                                <div class="text-error text-sm mt-1">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                        <label class="label">
+                            <span class="label-text-alt">Choose a unique name for this account</span>
+                        </label>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Broker</span>
+                        </label>
+                        {{ form.broker_name(class="select select-bordered") }}
+                        {% if form.broker_name.errors %}
+                            {% for error in form.broker_name.errors %}
+                                <div class="text-error text-sm mt-1">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">OpenAlgo Host URL</span>
+                    </label>
+                    {{ form.host_url(class="input input-bordered", placeholder="http://127.0.0.1:5000") }}
+                    {% if form.host_url.errors %}
+                        {% for error in form.host_url.errors %}
+                            <div class="text-error text-sm mt-1">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt">The URL where your OpenAlgo application is running</span>
+                    </label>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">WebSocket URL</span>
+                    </label>
+                    {{ form.websocket_url(class="input input-bordered", placeholder="ws://127.0.0.1:8765") }}
+                    {% if form.websocket_url.errors %}
+                        {% for error in form.websocket_url.errors %}
+                            <div class="text-error text-sm mt-1">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt">WebSocket URL for real-time data</span>
+                    </label>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">OpenAlgo API Key</span>
+                    </label>
+                    {{ form.api_key(class="input input-bordered", placeholder="Enter your OpenAlgo API key", type="password") }}
+                    {% if form.api_key.errors %}
+                        {% for error in form.api_key.errors %}
+                            <div class="text-error text-sm mt-1">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt">Get this from your OpenAlgo application</span>
+                    </label>
+                </div>
+                
+                <div class="form-control">
+                    <label class="cursor-pointer label justify-start">
+                        {{ form.is_primary(class="checkbox checkbox-primary") }}
+                        <div class="ml-3">
+                            <span class="label-text">Set as Primary Account</span>
+                            <div class="text-sm opacity-70">Primary account will be used as default in multi-account views</div>
+                        </div>
+                    </label>
+                </div>
+                
+                <!-- Test Connection Button -->
+                <div class="form-control mt-4">
+                    <button type="button" id="testConnectionBtn" class="btn btn-outline btn-secondary" onclick="testConnection()">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+                        </svg>
+                        Test Connection
+                    </button>
+                    <div id="testResult" class="mt-2 text-sm"></div>
+                </div>
+                
+                <div class="card-actions justify-end mt-8">
+                    <a href="{{ url_for('accounts.manage') }}" class="btn btn-ghost">Cancel</a>
+                    {{ form.submit(class="btn btn-primary") }}
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div class="alert alert-info mt-6">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+        </svg>
+        <div>
+            <h3 class="font-bold">How to get your OpenAlgo API Key</h3>
+            <div class="text-sm mt-1">
+                <ol class="list-decimal list-inside space-y-1">
+                    <li>Login to your OpenAlgo application</li>
+                    <li>Go to API Key management section</li>
+                    <li>Generate or copy your existing API key</li>
+                    <li>Paste it in the field above</li>
+                </ol>
+                <p class="mt-2">
+                    <a href="https://docs.openalgo.in" target="_blank" class="link link-primary">
+                        Read the documentation
+                    </a> for detailed setup instructions.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+async function testConnection() {
+    const hostUrl = document.querySelector('input[name="host_url"]').value;
+    const apiKey = document.querySelector('input[name="api_key"]').value;
+    const testBtn = document.getElementById('testConnectionBtn');
+    const testResult = document.getElementById('testResult');
+    
+    if (!hostUrl || !apiKey) {
+        testResult.innerHTML = '<div class="text-error">Please fill in Host URL and API Key first</div>';
+        return;
+    }
+    
+    // Show loading state
+    testBtn.classList.add('loading');
+    testBtn.disabled = true;
+    testResult.innerHTML = '<div class="text-info">Testing connection...</div>';
+    
+    try {
+        const response = await fetch('/accounts/test-connection-preview', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('input[name="csrf_token"]').value
+            },
+            body: JSON.stringify({
+                host_url: hostUrl,
+                api_key: apiKey
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === 'success') {
+            testResult.innerHTML = `<div class="text-success">✓ Connection successful! Broker: ${result.broker}</div>`;
+        } else {
+            testResult.innerHTML = `<div class="text-error">✗ Connection failed: ${result.message}</div>`;
+        }
+    } catch (error) {
+        testResult.innerHTML = `<div class="text-error">✗ Connection test failed: ${error.message}</div>`;
+    } finally {
+        testBtn.classList.remove('loading');
+        testBtn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,17 @@
+Flask
+Flask-SQLAlchemy
+Flask-Login
+Flask-WTF
+Flask-Cors
+Flask-Talisman
+Flask-Migrate
+Flask-Session
+Flask-Limiter
+WTForms
+openalgo
+python-dotenv
+Werkzeug
+email-validator
+redis
+python-json-logger
+cryptography

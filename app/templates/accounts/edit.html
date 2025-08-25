@@ -1,0 +1,246 @@
+{% extends "layout.html" %}
+
+{% block title %}Edit Account - AlgoMirror{% endblock %}
+
+{% block page_title %}Edit Account{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="breadcrumbs text-sm mb-6">
+        <ul>
+            <li><a href="{{ url_for('main.dashboard') }}">Dashboard</a></li>
+            <li><a href="{{ url_for('accounts.manage') }}">Accounts</a></li>
+            <li>Edit {{ account.account_name }}</li>
+        </ul>
+    </div>
+    
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title text-2xl mb-6">Edit Trading Account</h2>
+            
+            <form method="POST">
+                {{ form.hidden_tag() }}
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Account Name</span>
+                        </label>
+                        {{ form.account_name(class="input input-bordered", placeholder="My Trading Account") }}
+                        {% if form.account_name.errors %}
+                            {% for error in form.account_name.errors %}
+                                <div class="text-error text-sm mt-1">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                        <label class="label">
+                            <span class="label-text-alt">Choose a unique name for this account</span>
+                        </label>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="label">
+                            <span class="label-text">Broker</span>
+                        </label>
+                        {{ form.broker_name(class="select select-bordered") }}
+                        {% if form.broker_name.errors %}
+                            {% for error in form.broker_name.errors %}
+                                <div class="text-error text-sm mt-1">{{ error }}</div>
+                            {% endfor %}
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">OpenAlgo Host URL</span>
+                    </label>
+                    {{ form.host_url(class="input input-bordered", placeholder="http://127.0.0.1:5000") }}
+                    {% if form.host_url.errors %}
+                        {% for error in form.host_url.errors %}
+                            <div class="text-error text-sm mt-1">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt">The URL where your OpenAlgo application is running</span>
+                    </label>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">WebSocket URL</span>
+                    </label>
+                    {{ form.websocket_url(class="input input-bordered", placeholder="ws://127.0.0.1:8765") }}
+                    {% if form.websocket_url.errors %}
+                        {% for error in form.websocket_url.errors %}
+                            <div class="text-error text-sm mt-1">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt">WebSocket URL for real-time data</span>
+                    </label>
+                </div>
+                
+                <div class="form-control">
+                    <label class="label">
+                        <span class="label-text">OpenAlgo API Key</span>
+                    </label>
+                    {{ form.api_key(class="input input-bordered", placeholder="Leave empty to keep current key", type="password") }}
+                    {% if form.api_key.errors %}
+                        {% for error in form.api_key.errors %}
+                            <div class="text-error text-sm mt-1">{{ error }}</div>
+                        {% endfor %}
+                    {% endif %}
+                    <label class="label">
+                        <span class="label-text-alt">Leave empty to keep current API key, or enter new one to update</span>
+                    </label>
+                </div>
+                
+                <div class="divider"></div>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="form-control">
+                        <label class="cursor-pointer label justify-start">
+                            {{ form.is_primary(class="checkbox checkbox-primary") }}
+                            <div class="ml-3">
+                                <span class="label-text">Set as Primary Account</span>
+                                <div class="text-sm opacity-70">Primary account is used as default in multi-account views</div>
+                            </div>
+                        </label>
+                    </div>
+                    
+                    <div class="form-control">
+                        <label class="cursor-pointer label justify-start">
+                            {{ form.is_active(class="checkbox checkbox-success") }}
+                            <div class="ml-3">
+                                <span class="label-text">Account Active</span>
+                                <div class="text-sm opacity-70">Inactive accounts won't be used for trading operations</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="card-actions justify-end mt-8">
+                    <a href="{{ url_for('accounts.manage') }}" class="btn btn-ghost">Cancel</a>
+                    {{ form.update(class="btn btn-primary") }}
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- Account Information -->
+    <div class="card bg-base-100 shadow-xl mt-6">
+        <div class="card-body">
+            <h3 class="card-title">Account Information</h3>
+            
+            <div class="stats stats-vertical lg:stats-horizontal shadow">
+                <div class="stat">
+                    <div class="stat-title">Connection Status</div>
+                    <div class="stat-value text-{{ 'success' if account.connection_status == 'connected' else 'error' if account.connection_status == 'failed' else 'warning' }}">
+                        {{ account.connection_status.title() }}
+                    </div>
+                    <div class="stat-desc">
+                        {% if account.last_connected %}
+                        Last connected: {{ account.last_connected.strftime('%Y-%m-%d %H:%M') }}
+                        {% else %}
+                        Never connected
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="stat">
+                    <div class="stat-title">Account Type</div>
+                    <div class="stat-value text-base">
+                        {{ 'Primary' if account.is_primary else 'Secondary' }}
+                    </div>
+                    <div class="stat-desc">
+                        {{ 'Active' if account.is_active else 'Inactive' }}
+                    </div>
+                </div>
+                
+                <div class="stat">
+                    <div class="stat-title">Last Data Update</div>
+                    <div class="stat-value text-sm">
+                        {% if account.last_data_update %}
+                        {{ account.last_data_update.strftime('%H:%M') }}
+                        {% else %}
+                        No data
+                        {% endif %}
+                    </div>
+                    <div class="stat-desc">
+                        {% if account.last_data_update %}
+                        {{ account.last_data_update.strftime('%Y-%m-%d') }}
+                        {% else %}
+                        No updates yet
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="flex gap-2 mt-4">
+                <button onclick="testConnection()" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
+                    </svg>
+                    Test Connection
+                </button>
+                
+                <button onclick="refreshData()" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh Data
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Activity -->
+    <div class="card bg-base-100 shadow-xl mt-6">
+        <div class="card-body">
+            <h3 class="card-title">Recent Activity</h3>
+            
+            <div class="text-sm opacity-70">
+                Last few activities for this account will be shown here.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function testConnection() {
+    showToast('Testing connection...', 'info');
+    
+    fetchWithCSRF(`/accounts/test-connection/{{ account.id }}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast('Connection test successful!', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Connection test failed: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            showToast('Connection test error: ' + error.message, 'error');
+        });
+}
+
+function refreshData() {
+    showToast('Refreshing account data...', 'info');
+    
+    fetchWithCSRF(`/accounts/refresh-data/{{ account.id }}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast('Account data refreshed successfully!', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Failed to refresh data: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            showToast('Error refreshing data: ' + error.message, 'error');
+        });
+}
+</script>
+{% endblock %}

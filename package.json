@@ -1,0 +1,16 @@
+{
+  "name": "algomirror",
+  "version": "1.0.0",
+  "description": "AlgoMirror - Multi Account OpenAlgo Management Platform",
+  "scripts": {
+    "build-css": "npx tailwindcss -i ./src/input.css -o ./app/static/css/compiled.css --minify",
+    "watch-css": "npx tailwindcss -i ./src/input.css -o ./app/static/css/compiled.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.0",
+    "daisyui": "^4.4.19"
+  },
+  "keywords": ["trading", "openalgo", "flask"],
+  "author": "OpenFlare Technologies",
+  "license": "Proprietary"
+}

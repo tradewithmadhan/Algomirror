@@ -1,0 +1,242 @@
+{% extends "layout.html" %}
+
+{% block title %}Manage Accounts - AlgoMirror{% endblock %}
+
+{% block page_title %}Manage Accounts{% endblock %}
+
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h1 class="text-3xl font-bold">Manage Accounts</h1>
+    <a href="{{ url_for('accounts.add') }}" class="btn btn-primary">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+        </svg>
+        Add Account
+    </a>
+</div>
+
+{% if accounts %}
+<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {% for account in accounts %}
+    <div class="card bg-base-100 shadow-xl {{ 'border-2 border-primary' if account.is_primary }}">
+        <div class="card-body">
+            <div class="flex justify-between items-start">
+                <h2 class="card-title">
+                    {{ account.account_name }}
+                    {% if account.is_primary %}
+                    <div class="badge badge-primary">Primary</div>
+                    {% endif %}
+                </h2>
+                <div class="dropdown dropdown-end">
+                    <div tabindex="0" role="button" class="btn btn-ghost btn-sm btn-circle">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                        </svg>
+                    </div>
+                    <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow bg-base-100 rounded-box w-52">
+                        <li><a href="#" onclick="testConnection({{ account.id }})">Test Connection</a></li>
+                        <li><a href="#" onclick="refreshData({{ account.id }})">Refresh Data</a></li>
+                        <li><a href="{{ url_for('accounts.edit', account_id=account.id) }}">Edit</a></li>
+                        <div class="divider my-1"></div>
+                        <li>
+                            <a href="#" onclick="deleteAccount({{ account.id }}, '{{ account.account_name }}')" class="text-error">
+                                Delete
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+            <div class="space-y-2">
+                <div class="flex justify-between">
+                    <span class="opacity-70">Broker:</span>
+                    <span class="font-medium">{{ account.broker_name }}</span>
+                </div>
+                
+                <div class="flex justify-between">
+                    <span class="opacity-70">Status:</span>
+                    <div class="badge badge-{{ 'success' if account.connection_status == 'connected' else 'error' if account.connection_status == 'failed' else 'warning' }}">
+                        {{ account.connection_status }}
+                    </div>
+                </div>
+                
+                {% if account.last_connected %}
+                <div class="flex justify-between">
+                    <span class="opacity-70">Last Connected:</span>
+                    <span class="text-sm">{{ account.last_connected.strftime('%Y-%m-%d %H:%M') }}</span>
+                </div>
+                {% endif %}
+                
+                {% if account.last_funds_data %}
+                <div class="divider"></div>
+                <div class="space-y-1">
+                    <div class="flex justify-between">
+                        <span class="opacity-70">Available Cash:</span>
+                        <span class="font-mono">₹{{ "%.2f"|format(account.last_funds_data.get('availablecash', 0)|float) }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="opacity-70">M2M P&L:</span>
+                        <span class="font-mono {{ 'text-success' if (account.last_funds_data.get('m2mrealized', 0)|float + account.last_funds_data.get('m2munrealized', 0)|float) >= 0 else 'text-error' }}">
+                            ₹{{ "%.2f"|format((account.last_funds_data.get('m2mrealized', 0)|float + account.last_funds_data.get('m2munrealized', 0)|float)) }}
+                        </span>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            
+            {% if not account.is_active %}
+            <div class="alert alert-warning mt-4">
+                <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+                <span class="text-sm">Account is inactive</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Account Statistics -->
+<div class="stats shadow w-full mt-8">
+    <div class="stat">
+        <div class="stat-title">Total Accounts</div>
+        <div class="stat-value">{{ accounts|length }}</div>
+    </div>
+    
+    <div class="stat">
+        <div class="stat-title">Active Accounts</div>
+        <div class="stat-value text-primary">{{ accounts|selectattr('is_active')|list|length }}</div>
+    </div>
+    
+    <div class="stat">
+        <div class="stat-title">Connected</div>
+        <div class="stat-value text-success">{{ accounts|selectattr('connection_status', 'equalto', 'connected')|list|length }}</div>
+    </div>
+</div>
+
+{% else %}
+<div class="text-center py-12">
+    <div class="max-w-md mx-auto">
+        <img src="{{ url_for('static', filename='favicon/logo.png') }}" alt="AlgoMirror" class="h-16 w-16 mx-auto mb-4 opacity-50">
+        <h2 class="text-2xl font-bold mb-2">No accounts found</h2>
+        <p class="text-base-content/70 mb-6">
+            Start by adding your first OpenAlgo trading account to begin managing your portfolio.
+        </p>
+        <a href="{{ url_for('accounts.add') }}" class="btn btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Add Your First Account
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<!-- Delete Confirmation Modal -->
+<dialog id="delete-modal" class="modal">
+    <div class="modal-box">
+        <h3 class="font-bold text-lg">Confirm Deletion</h3>
+        <p class="py-4">Are you sure you want to delete the account "<span id="account-name"></span>"? This action cannot be undone.</p>
+        <div class="modal-action">
+            <form method="dialog">
+                <button class="btn">Cancel</button>
+            </form>
+            <button id="confirm-delete" class="btn btn-error">Delete</button>
+        </div>
+    </div>
+</dialog>
+
+{% block head %}
+<style>
+    .animate-pulse {
+        animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: .5;
+        }
+    }
+</style>
+{% endblock %}
+
+<script>
+let deleteAccountId = null;
+
+function testConnection(accountId) {
+    const card = event.target.closest('.card');
+    const statusBadge = card.querySelector('.badge');
+    
+    // Show loading state
+    statusBadge.textContent = 'testing...';
+    statusBadge.className = 'badge badge-warning animate-pulse';
+    
+    fetchWithCSRF(`/accounts/test-connection/${accountId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                statusBadge.textContent = 'connected';
+                statusBadge.className = 'badge badge-success';
+                showToast('Connection test successful!', 'success');
+                
+                // Refresh the page to update data
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                statusBadge.textContent = 'failed';
+                statusBadge.className = 'badge badge-error';
+                showToast('Connection test failed: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            statusBadge.textContent = 'error';
+            statusBadge.className = 'badge badge-error';
+            showToast('Connection test error: ' + error.message, 'error');
+        });
+}
+
+function refreshData(accountId) {
+    showToast('Refreshing account data...', 'info');
+    
+    fetchWithCSRF(`/accounts/refresh-data/${accountId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                showToast('Account data refreshed successfully!', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Failed to refresh data: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            showToast('Error refreshing data: ' + error.message, 'error');
+        });
+}
+
+function deleteAccount(accountId, accountName) {
+    deleteAccountId = accountId;
+    document.getElementById('account-name').textContent = accountName;
+    document.getElementById('delete-modal').showModal();
+}
+
+document.getElementById('confirm-delete').addEventListener('click', function() {
+    if (deleteAccountId) {
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `/accounts/delete/${deleteAccountId}`;
+        
+        const csrfToken = document.createElement('input');
+        csrfToken.type = 'hidden';
+        csrfToken.name = 'csrf_token';
+        csrfToken.value = getCSRFToken();
+        form.appendChild(csrfToken);
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+});
+</script>
+{% endblock %}

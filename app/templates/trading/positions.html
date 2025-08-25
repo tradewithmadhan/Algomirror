@@ -1,0 +1,171 @@
+{% extends "layout.html" %}
+
+{% block title %}Positions - AlgoMirror{% endblock %}
+
+{% block page_title %}Positions{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center">
+        <div>
+            <h1 class="text-3xl font-bold">Open Positions</h1>
+            <p class="text-base-content/70 mt-1">
+                {{ "Showing positions for selected account" if single_account else "Showing positions across all accounts" }}
+            </p>
+        </div>
+        
+        <div class="flex gap-2">
+            <!-- Account Selector -->
+            {% if not single_account and accounts|length > 1 %}
+            <div class="dropdown dropdown-end">
+                <div tabindex="0" role="button" class="btn btn-outline btn-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                    </svg>
+                    View Single Account
+                </div>
+                <ul tabindex="0" class="dropdown-content z-50 menu p-2 shadow bg-base-100 rounded-box w-52">
+                    {% for account in accounts %}
+                    <li>
+                        <a href="{{ url_for('trading.positions', account=account.id) }}">
+                            {{ account.account_name }}
+                        </a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            
+            {% if single_account %}
+            <a href="{{ url_for('trading.positions') }}" class="btn btn-outline btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                </svg>
+                View All Accounts
+            </a>
+            {% endif %}
+            
+            <button onclick="location.reload()" class="btn btn-primary btn-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    {% if positions_data %}
+    <!-- Portfolio Summary -->
+    <div class="stats shadow w-full">
+        <div class="stat">
+            <div class="stat-title">Total Positions</div>
+            <div class="stat-value">{{ positions_data|length }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Total Invested</div>
+            <div class="stat-value text-primary">₹{{ "%.2f"|format(total_invested) }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Current Value</div>
+            <div class="stat-value text-info">₹{{ "%.2f"|format(total_current) }}</div>
+        </div>
+        
+        <div class="stat">
+            <div class="stat-title">Total P&L</div>
+            <div class="stat-value {{ 'text-success' if total_pnl >= 0 else 'text-error' }}">
+                ₹{{ "%.2f"|format(total_pnl) }}
+            </div>
+            {% if total_invested > 0 %}
+            <div class="stat-desc">{{ "%.2f"|format((total_pnl / total_invested) * 100) }}%</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Positions Table -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body">
+            <h2 class="card-title">Open Positions</h2>
+            
+            <div class="overflow-x-auto">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            {% if not single_account %}
+                            <th>Account</th>
+                            {% endif %}
+                            <th>Symbol</th>
+                            <th>Exchange</th>
+                            <th>Product</th>
+                            <th>Qty</th>
+                            <th>Avg Price</th>
+                            <th>LTP</th>
+                            <th>P&L</th>
+                            <th>P&L %</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for position in positions_data %}
+                        <tr class="hover">
+                            {% if not single_account %}
+                            <td>
+                                <div class="text-xs opacity-70">{{ position.account_name }}</div>
+                                <div class="text-xs opacity-50">{{ position.broker }}</div>
+                            </td>
+                            {% endif %}
+                            <td class="font-semibold">{{ position.symbol }}</td>
+                            <td>{{ position.exchange }}</td>
+                            <td>{{ position.product }}</td>
+                            <td class="font-mono {{ 'text-success' if position.quantity|float > 0 else 'text-error' }}">
+                                {{ position.quantity }}
+                            </td>
+                            <td class="font-mono">₹{{ "%.2f"|format(position.average_price|float) if position.average_price else "0.00" }}</td>
+                            <td class="font-mono">₹{{ "%.2f"|format(position.ltp|float) if position.ltp else "0.00" }}</td>
+                            <td class="font-mono {{ 'text-success' if position.pnl|float >= 0 else 'text-error' }}">
+                                ₹{{ "%.2f"|format(position.pnl|float) if position.pnl else "0.00" }}
+                            </td>
+                            <td class="{{ 'text-success' if position.pnl_percentage|float >= 0 else 'text-error' }}">
+                                {{ "%.2f"|format(position.pnl_percentage|float) if position.pnl_percentage else "0.00" }}%
+                            </td>
+                            <td class="font-mono">₹{{ "%.2f"|format(position.current_value|float) if position.current_value else "0.00" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    {% else %}
+    <!-- No Positions -->
+    <div class="card bg-base-100 shadow-xl">
+        <div class="card-body text-center py-16">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-20 w-20 mx-auto mb-4 text-base-content/30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            <h2 class="text-2xl font-bold mb-2">No Open Positions</h2>
+            <p class="text-base-content/70 max-w-md mx-auto">
+                {% if accounts|length == 0 %}
+                You need to add a trading account first to view positions.
+                {% else %}
+                You don't have any open positions in your trading accounts.
+                {% endif %}
+            </p>
+            {% if accounts|length == 0 %}
+            <div class="mt-6">
+                <a href="{{ url_for('accounts.add') }}" class="btn btn-primary">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                    </svg>
+                    Add Account
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

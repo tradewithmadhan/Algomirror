@@ -1,0 +1,178 @@
+{% extends "layout.html" %}
+
+{% block title %}AlgoMirror - Multi Account OpenAlgo Management{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="min-h-screen bg-gradient-to-b from-base-100 to-base-200">
+    <div class="container mx-auto px-6 py-20">
+        <!-- Main Hero -->
+        <div class="text-center max-w-4xl mx-auto mb-20">
+            <div class="inline-flex items-center px-4 py-2 rounded-full bg-primary/10 text-primary text-sm font-medium mb-8">
+                <svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                </svg>
+                Multi-Account Trading Platform
+            </div>
+            
+            <h1 class="text-5xl md:text-6xl font-bold mb-6 bg-gradient-to-r from-base-content to-base-content/70 bg-clip-text text-transparent">
+                Manage Multiple OpenAlgo Accounts
+                <span class="block text-primary mt-2">From One Dashboard</span>
+            </h1>
+            
+            <p class="text-xl text-base-content/60 mb-10 max-w-2xl mx-auto">
+                The modern platform for algorithmic traders to manage, monitor, and analyze multiple trading accounts with real-time synchronization and enterprise-grade security.
+            </p>
+            
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary btn-lg">
+                    Go to Dashboard
+                    <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                    </svg>
+                </a>
+                {% else %}
+                <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-lg">
+                    Start Free
+                    <svg class="w-5 h-5 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
+                    </svg>
+                </a>
+                <a href="{{ url_for('auth.login') }}" class="btn btn-ghost btn-lg">
+                    Sign In
+                </a>
+                {% endif %}
+            </div>
+            
+            {% if not current_user.is_authenticated %}
+            <p class="text-sm text-base-content/50 mt-6">
+                No credit card required • First user becomes admin
+            </p>
+            {% endif %}
+        </div>
+        
+        <!-- Feature Grid -->
+        <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-20">
+            <!-- Feature 1 -->
+            <div class="group p-6 rounded-xl border border-base-300 hover:border-primary/50 transition-all hover:shadow-lg">
+                <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold mb-2">Real-time Analytics</h3>
+                <p class="text-base-content/60 text-sm">
+                    Monitor positions, P&L, and market data across all accounts with live updates and comprehensive analytics.
+                </p>
+            </div>
+            
+            <!-- Feature 2 -->
+            <div class="group p-6 rounded-xl border border-base-300 hover:border-primary/50 transition-all hover:shadow-lg">
+                <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold mb-2">Bank-Grade Security</h3>
+                <p class="text-base-content/60 text-sm">
+                    Military-grade encryption for API keys, comprehensive audit logging, and enterprise security features.
+                </p>
+            </div>
+            
+            <!-- Feature 3 -->
+            <div class="group p-6 rounded-xl border border-base-300 hover:border-primary/50 transition-all hover:shadow-lg">
+                <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-4m-5 0H3m2 0h4M9 3h6"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold mb-2">Multi-Account Support</h3>
+                <p class="text-base-content/60 text-sm">
+                    Connect unlimited OpenAlgo accounts from different brokers and manage them from a single interface.
+                </p>
+            </div>
+            
+            <!-- Feature 4 -->
+            <div class="group p-6 rounded-xl border border-base-300 hover:border-primary/50 transition-all hover:shadow-lg">
+                <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold mb-2">Auto Synchronization</h3>
+                <p class="text-base-content/60 text-sm">
+                    Automatic data sync with your OpenAlgo accounts ensures you always have the latest information.
+                </p>
+            </div>
+            
+            <!-- Feature 5 -->
+            <div class="group p-6 rounded-xl border border-base-300 hover:border-primary/50 transition-all hover:shadow-lg">
+                <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold mb-2">Detailed Reports</h3>
+                <p class="text-base-content/60 text-sm">
+                    Generate comprehensive reports on trading activity, performance metrics, and account analytics.
+                </p>
+            </div>
+            
+            <!-- Feature 6 -->
+            <div class="group p-6 rounded-xl border border-base-300 hover:border-primary/50 transition-all hover:shadow-lg">
+                <div class="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4 group-hover:bg-primary/20 transition-colors">
+                    <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                    </svg>
+                </div>
+                <h3 class="text-lg font-semibold mb-2">Mobile Responsive</h3>
+                <p class="text-base-content/60 text-sm">
+                    Access your dashboard from any device with our fully responsive design optimized for all screens.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Stats Section -->
+        <div class="bg-base-200 rounded-2xl p-8 mb-20">
+            <div class="grid md:grid-cols-4 gap-8 text-center">
+                <div>
+                    <div class="text-3xl font-bold text-primary mb-2">100%</div>
+                    <div class="text-sm text-base-content/60">Secure & Encrypted</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-primary mb-2">24/7</div>
+                    <div class="text-sm text-base-content/60">Real-time Sync</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-primary mb-2">∞</div>
+                    <div class="text-sm text-base-content/60">Accounts Support</div>
+                </div>
+                <div>
+                    <div class="text-3xl font-bold text-primary mb-2">0</div>
+                    <div class="text-sm text-base-content/60">Setup Fees</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- CTA Section -->
+        <div class="text-center py-12 px-8 rounded-2xl bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
+            <h2 class="text-3xl font-bold mb-4">Ready to Streamline Your Trading?</h2>
+            <p class="text-lg text-base-content/60 mb-8 max-w-2xl mx-auto">
+                Join traders who are already using AlgoMirror to efficiently manage their multiple OpenAlgo accounts.
+            </p>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                <a href="{{ url_for('auth.register') }}" class="btn btn-primary btn-lg">
+                    Get Started Free
+                </a>
+                <a href="https://docs.openalgo.in" target="_blank" class="btn btn-ghost btn-lg">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path>
+                    </svg>
+                    Documentation
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
