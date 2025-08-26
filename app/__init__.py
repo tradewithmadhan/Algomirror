@@ -127,4 +127,9 @@ def create_app(config_name=None):
     from app.utils.ping_monitor import ping_monitor
     ping_monitor.init_app(app)
     
+    # Initialize option chain background service
+    from app.utils.background_service import option_chain_service
+    option_chain_service.start_service()
+    app.logger.info('Option chain background service started', extra={'event': 'service_init'})
+    
     return app

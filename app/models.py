@@ -41,6 +41,9 @@ class User(UserMixin, db.Model):
     def get_active_accounts(self):
         return self.accounts.filter_by(is_active=True).all()
     
+    def get_primary_account(self):
+        return self.accounts.filter_by(is_active=True, is_primary=True).first()
+    
     def __repr__(self):
         return f'<User {self.username}>'
 
@@ -199,6 +202,81 @@ class Holding(db.Model):
     
     def __repr__(self):
         return f'<Holding {self.symbol} - Qty: {self.quantity}>'
+
+class TradingHoursTemplate(db.Model):
+    __tablename__ = 'trading_hours_templates'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    description = db.Column(db.Text)
+    market = db.Column(db.String(50), default='NSE')
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    sessions = db.relationship('TradingSession', backref='template', lazy='dynamic', cascade='all, delete-orphan')
+    
+    def __repr__(self):
+        return f'<TradingHoursTemplate {self.name}>'
+
+class TradingSession(db.Model):
+    __tablename__ = 'trading_sessions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    template_id = db.Column(db.Integer, db.ForeignKey('trading_hours_templates.id'), nullable=False)
+    
+    session_name = db.Column(db.String(100), nullable=False)
+    day_of_week = db.Column(db.Integer, nullable=False)  # 0=Monday, 6=Sunday
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    session_type = db.Column(db.String(50))  # 'normal', 'pre_market', 'post_market'
+    is_active = db.Column(db.Boolean, default=True)
+    
+    # Unique constraint for template, day, and session
+    __table_args__ = (
+        db.UniqueConstraint('template_id', 'day_of_week', 'session_name', name='_template_day_session_uc'),
+    )
+    
+    def __repr__(self):
+        return f'<TradingSession {self.session_name} - Day {self.day_of_week}>'
+
+class MarketHoliday(db.Model):
+    __tablename__ = 'market_holidays'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    holiday_date = db.Column(db.Date, nullable=False, unique=True)
+    holiday_name = db.Column(db.String(200), nullable=False)
+    market = db.Column(db.String(50), default='NSE')
+    holiday_type = db.Column(db.String(50))  # 'trading', 'settlement', 'both'
+    is_special_session = db.Column(db.Boolean, default=False)
+    special_start_time = db.Column(db.Time)
+    special_end_time = db.Column(db.Time)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def __repr__(self):
+        return f'<MarketHoliday {self.holiday_date} - {self.holiday_name}>'
+
+class SpecialTradingSession(db.Model):
+    __tablename__ = 'special_trading_sessions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    session_date = db.Column(db.Date, nullable=False)
+    session_name = db.Column(db.String(200), nullable=False)  # e.g., 'Muhurat Trading', 'Special Session'
+    market = db.Column(db.String(50), default='NSE')
+    start_time = db.Column(db.Time, nullable=False)
+    end_time = db.Column(db.Time, nullable=False)
+    description = db.Column(db.Text)
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Unique constraint for date and market
+    __table_args__ = (
+        db.UniqueConstraint('session_date', 'market', 'session_name', name='_date_market_session_uc'),
+    )
+    
+    def __repr__(self):
+        return f'<SpecialTradingSession {self.session_date} - {self.session_name}>'
 
 @login_manager.user_loader
 def load_user(user_id):

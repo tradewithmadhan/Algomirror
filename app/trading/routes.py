@@ -1,9 +1,14 @@
-from flask import render_template, request, jsonify, current_app
+from flask import render_template, request, jsonify, current_app, Response, flash, redirect, url_for
 from flask_login import login_required, current_user
 from app.trading import trading_bp
 from app.models import TradingAccount
 from app.utils.openalgo_client import ExtendedOpenAlgoAPI
+from app.utils.option_chain import OptionChainManager
+from app.utils.websocket_manager import ProfessionalWebSocketManager
+from app.utils.background_service import option_chain_service
 from datetime import datetime
+import json
+import time
 
 def get_selected_accounts():
     """Get accounts to display based on user selection"""
@@ -328,3 +333,521 @@ def holdings():
                          statistics=statistics,
                          single_account=len(accounts) == 1,
                          accounts=current_user.get_active_accounts())
+
+
+# Option Chain Management Routes
+@trading_bp.route('/option-chain')
+@login_required
+def option_chain():
+    """Display option chain interface"""
+    underlying = request.args.get('underlying', 'NIFTY')
+    expiry = request.args.get('expiry')
+    
+    # Get primary account for API calls
+    primary_account = current_user.get_primary_account()
+    
+    if not primary_account:
+        return render_template('trading/option_chain.html',
+                             error="No primary account configured. Please set a primary account first.")
+    
+    try:
+        # Create API client
+        client = ExtendedOpenAlgoAPI(
+            api_key=primary_account.get_api_key(),
+            host=primary_account.host_url
+        )
+        
+        # Get available expiry dates if not specified
+        if not expiry:
+            expiry_response = client.expiry(
+                symbol=underlying,
+                exchange='NFO',
+                instrumenttype='options'
+            )
+            
+            if expiry_response.get('status') == 'success':
+                expiries = expiry_response.get('data', [])
+                if expiries:
+                    expiry = expiries[0]  # Use nearest expiry
+        
+        # Initialize option chain manager
+        option_manager = OptionChainManager(underlying, expiry)
+        option_manager.initialize(client)
+        
+        # Get option chain data
+        chain_data = option_manager.get_option_chain()
+        
+        return render_template('trading/option_chain.html',
+                             chain_data=chain_data,
+                             underlying=underlying,
+                             expiry=expiry,
+                             available_expiries=expiries if 'expiries' in locals() else [],
+                             primary_account=primary_account)
+                             
+    except Exception as e:
+        current_app.logger.error(f"Error loading option chain: {e}")
+        return render_template('trading/option_chain.html',
+                             error=f"Error loading option chain: {str(e)}")
+
+
+@trading_bp.route('/api/option-chain/<underlying>')
+@login_required
+def api_option_chain(underlying):
+    """API endpoint for real-time option chain data"""
+    expiry = request.args.get('expiry')
+    
+    # Get primary account
+    primary_account = current_user.get_primary_account()
+    
+    if not primary_account:
+        return jsonify({'status': 'error', 'message': 'No primary account configured'}), 400
+    
+    try:
+        # Create API client
+        client = ExtendedOpenAlgoAPI(
+            api_key=primary_account.get_api_key(),
+            host=primary_account.host_url
+        )
+        
+        # Get expiry if not provided
+        if not expiry:
+            expiry_response = client.expiry(
+                symbol=underlying,
+                exchange='NFO',
+                instrumenttype='options'
+            )
+            
+            if expiry_response.get('status') == 'success':
+                expiries = expiry_response.get('data', [])
+                if expiries:
+                    expiry = expiries[0]
+        
+        # Get option chain manager instance
+        option_manager = OptionChainManager(underlying, expiry)
+        
+        if not option_manager.is_active():
+            option_manager.initialize(client)
+        
+        # Get option chain data
+        chain_data = option_manager.get_option_chain()
+        
+        return jsonify({
+            'status': 'success',
+            'data': chain_data
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f"API error for option chain: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@trading_bp.route('/api/option-chain/status')
+@login_required
+def option_chain_status():
+    """Check option chain monitoring status"""
+    try:
+        nifty_manager = OptionChainManager('NIFTY', None)
+        banknifty_manager = OptionChainManager('BANKNIFTY', None)
+        
+        status = {
+            'nifty': {
+                'active': nifty_manager.is_active(),
+                'atm_strike': nifty_manager.atm_strike,
+                'underlying_ltp': nifty_manager.underlying_ltp
+            },
+            'banknifty': {
+                'active': banknifty_manager.is_active(),
+                'atm_strike': banknifty_manager.atm_strike,
+                'underlying_ltp': banknifty_manager.underlying_ltp
+            }
+        }
+        
+        return jsonify({'status': 'success', 'data': status})
+        
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@trading_bp.route('/api/option-chain/stream')
+@login_required
+def option_chain_stream():
+    """Server-Sent Events endpoint for live option chain updates"""
+    
+    # Capture request parameters before entering generator
+    underlying = request.args.get('underlying', 'NIFTY')
+    expiry = request.args.get('expiry')
+    
+    def generate():
+        """Generate SSE stream"""
+        # Get option chain manager
+        option_manager = OptionChainManager(underlying, expiry)
+        
+        while True:
+            try:
+                # Get latest option chain data
+                chain_data = option_manager.get_option_chain()
+                
+                # Send as SSE
+                yield f"data: {json.dumps(chain_data)}\n\n"
+                
+                # Wait before next update
+                time.sleep(1)  # Update every second
+                
+            except Exception as e:
+                current_app.logger.error(f"SSE stream error: {e}")
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                break
+    
+    return Response(generate(), mimetype='text/event-stream')
+
+
+@trading_bp.route('/trading-hours')
+@login_required
+def trading_hours():
+    """Trading hours management page (admin only)"""
+    from app.models import TradingHoursTemplate, TradingSession, MarketHoliday, SpecialTradingSession
+    from flask_login import current_user
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('main.dashboard'))
+    
+    # Get all trading hours templates
+    templates = TradingHoursTemplate.query.all()
+    
+    # Get upcoming holidays
+    today = datetime.now().date()
+    holidays = MarketHoliday.query.filter(
+        MarketHoliday.holiday_date >= today
+    ).order_by(MarketHoliday.holiday_date).limit(10).all()
+    
+    # Get upcoming special sessions
+    special_sessions = SpecialTradingSession.query.filter(
+        SpecialTradingSession.session_date >= today
+    ).order_by(SpecialTradingSession.session_date).all()
+    
+    # Get background service status
+    service_status = option_chain_service.get_status()
+    
+    return render_template('trading/trading_hours.html',
+                         templates=templates,
+                         holidays=holidays,
+                         special_sessions=special_sessions,
+                         service_status=service_status)
+
+
+@trading_bp.route('/trading-hours/holiday/add', methods=['POST'])
+@login_required
+def add_holiday():
+    """Add a new market holiday"""
+    from datetime import datetime
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('main.dashboard'))
+    
+    try:
+        # Parse form data
+        holiday_date = datetime.strptime(request.form.get('holiday_date'), '%Y-%m-%d').date()
+        holiday_name = request.form.get('holiday_name')
+        market = request.form.get('market', 'NSE')
+        is_special_session = request.form.get('is_special_session') == 'on'
+        
+        # Check if holiday already exists
+        existing = MarketHoliday.query.filter_by(
+            holiday_date=holiday_date,
+            market=market
+        ).first()
+        
+        if existing:
+            flash(f'Holiday already exists for {holiday_date} on {market}', 'error')
+        else:
+            # Create new holiday
+            holiday = MarketHoliday(
+                holiday_date=holiday_date,
+                holiday_name=holiday_name,
+                market=market,
+                holiday_type='trading',
+                is_special_session=is_special_session
+            )
+            
+            # Add special session times if provided
+            if is_special_session:
+                start_time = request.form.get('special_start_time')
+                end_time = request.form.get('special_end_time')
+                if start_time:
+                    holiday.special_start_time = datetime.strptime(start_time, '%H:%M').time()
+                if end_time:
+                    holiday.special_end_time = datetime.strptime(end_time, '%H:%M').time()
+            
+            db.session.add(holiday)
+            db.session.commit()
+            flash(f'Holiday "{holiday_name}" added successfully!', 'success')
+            
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error adding holiday: {e}')
+        flash(f'Error adding holiday: {str(e)}', 'error')
+    
+    return redirect(url_for('trading.trading_hours'))
+
+
+@trading_bp.route('/trading-hours/holiday/<int:holiday_id>/delete', methods=['POST'])
+@login_required
+def delete_holiday(holiday_id):
+    """Delete a market holiday"""
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('main.dashboard'))
+    
+    try:
+        holiday = MarketHoliday.query.get_or_404(holiday_id)
+        holiday_name = holiday.holiday_name
+        
+        db.session.delete(holiday)
+        db.session.commit()
+        
+        flash(f'Holiday "{holiday_name}" deleted successfully!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error deleting holiday: {e}')
+        flash(f'Error deleting holiday: {str(e)}', 'error')
+    
+    return redirect(url_for('trading.trading_hours'))
+
+
+@trading_bp.route('/trading-hours/sessions/<int:template_id>')
+@login_required
+def get_sessions(template_id):
+    """Get sessions for a template (JSON API)"""
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        return jsonify({'status': 'error', 'message': 'Access denied'}), 403
+    
+    try:
+        template = TradingHoursTemplate.query.get_or_404(template_id)
+        sessions = []
+        
+        for session in template.sessions:
+            sessions.append({
+                'id': session.id,
+                'day_of_week': session.day_of_week,
+                'start_time': session.start_time.strftime('%H:%M'),
+                'end_time': session.end_time.strftime('%H:%M'),
+                'is_active': session.is_active
+            })
+        
+        return jsonify({'status': 'success', 'sessions': sessions})
+        
+    except Exception as e:
+        current_app.logger.error(f'Error getting sessions: {e}')
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@trading_bp.route('/trading-hours/session/<int:session_id>/update', methods=['POST'])
+@login_required
+def update_session(session_id):
+    """Update a single trading session via AJAX"""
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        return jsonify({'status': 'error', 'message': 'Access denied'}), 403
+    
+    try:
+        session = TradingSession.query.get_or_404(session_id)
+        data = request.get_json()
+        
+        if 'start_time' in data:
+            session.start_time = datetime.strptime(data['start_time'], '%H:%M').time()
+        if 'end_time' in data:
+            session.end_time = datetime.strptime(data['end_time'], '%H:%M').time()
+        
+        db.session.commit()
+        
+        # Restart background service to apply changes
+        option_chain_service.schedule_market_hours()
+        
+        return jsonify({'status': 'success', 'message': 'Session updated'})
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error updating session: {e}')
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@trading_bp.route('/trading-hours/sessions/update', methods=['POST'])
+@login_required
+def update_sessions():
+    """Update all sessions for a template"""
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('main.dashboard'))
+    
+    try:
+        template_id = request.form.get('template_id')
+        template = TradingHoursTemplate.query.get_or_404(template_id)
+        
+        days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        
+        for day_num, day_name in enumerate(days):
+            # Find or create session for this day
+            session = TradingSession.query.filter_by(
+                template_id=template.id,
+                day_of_week=day_num
+            ).first()
+            
+            is_active = request.form.get(f'{day_name}_active') == 'on'
+            
+            if session:
+                # Update existing session
+                if request.form.get(f'{day_name}_start'):
+                    session.start_time = datetime.strptime(
+                        request.form.get(f'{day_name}_start'), '%H:%M'
+                    ).time()
+                if request.form.get(f'{day_name}_end'):
+                    session.end_time = datetime.strptime(
+                        request.form.get(f'{day_name}_end'), '%H:%M'
+                    ).time()
+                session.is_active = is_active
+            elif is_active:
+                # Create new session if it's active
+                new_session = TradingSession(
+                    template_id=template.id,
+                    session_name=f'{day_name.capitalize()} Regular Hours',
+                    day_of_week=day_num,
+                    start_time=datetime.strptime(
+                        request.form.get(f'{day_name}_start', '09:15'), '%H:%M'
+                    ).time(),
+                    end_time=datetime.strptime(
+                        request.form.get(f'{day_name}_end', '15:30'), '%H:%M'
+                    ).time(),
+                    session_type='normal',
+                    is_active=True
+                )
+                db.session.add(new_session)
+        
+        db.session.commit()
+        
+        # Restart background service to apply changes
+        option_chain_service.schedule_market_hours()
+        
+        flash('Trading sessions updated successfully!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error updating sessions: {e}')
+        flash(f'Error updating sessions: {str(e)}', 'error')
+    
+    return redirect(url_for('trading.trading_hours'))
+
+
+@trading_bp.route('/trading-hours/template/<int:template_id>/toggle', methods=['POST'])
+@login_required
+def toggle_template(template_id):
+    """Toggle template active status"""
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        return jsonify({'status': 'error', 'message': 'Access denied'}), 403
+    
+    try:
+        template = TradingHoursTemplate.query.get_or_404(template_id)
+        template.is_active = not template.is_active
+        db.session.commit()
+        
+        return jsonify({'status': 'success', 'is_active': template.is_active})
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error toggling template: {e}')
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@trading_bp.route('/trading-hours/special-session/add', methods=['POST'])
+@login_required
+def add_special_session():
+    """Add a new special trading session"""
+    from app.models import SpecialTradingSession
+    from datetime import datetime
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('main.dashboard'))
+    
+    try:
+        # Parse form data
+        session_date = datetime.strptime(request.form.get('session_date'), '%Y-%m-%d').date()
+        session_name = request.form.get('session_name')
+        market = request.form.get('market', 'NSE')
+        start_time = datetime.strptime(request.form.get('start_time'), '%H:%M').time()
+        end_time = datetime.strptime(request.form.get('end_time'), '%H:%M').time()
+        description = request.form.get('description', '')
+        
+        # Check if session already exists for this date
+        existing = SpecialTradingSession.query.filter_by(
+            session_date=session_date,
+            market=market,
+            session_name=session_name
+        ).first()
+        
+        if existing:
+            flash(f'Special session already exists for {session_date} on {market}', 'error')
+        else:
+            # Create new special session
+            session = SpecialTradingSession(
+                session_date=session_date,
+                session_name=session_name,
+                market=market,
+                start_time=start_time,
+                end_time=end_time,
+                description=description,
+                is_active=True
+            )
+            
+            db.session.add(session)
+            db.session.commit()
+            flash(f'Special session "{session_name}" added successfully!', 'success')
+            
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error adding special session: {e}')
+        flash(f'Error adding special session: {str(e)}', 'error')
+    
+    return redirect(url_for('trading.trading_hours'))
+
+
+@trading_bp.route('/trading-hours/special-session/<int:session_id>/delete', methods=['POST'])
+@login_required
+def delete_special_session(session_id):
+    """Delete a special trading session"""
+    from app.models import SpecialTradingSession
+    
+    # Check if user is admin
+    if not current_user.is_admin:
+        flash('Access denied. Admin privileges required.', 'error')
+        return redirect(url_for('main.dashboard'))
+    
+    try:
+        session = SpecialTradingSession.query.get_or_404(session_id)
+        session_name = session.session_name
+        
+        db.session.delete(session)
+        db.session.commit()
+        
+        flash(f'Special session "{session_name}" deleted successfully!', 'success')
+        
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'Error deleting special session: {e}')
+        flash(f'Error deleting special session: {str(e)}', 'error')
+    
+    return redirect(url_for('trading.trading_hours'))

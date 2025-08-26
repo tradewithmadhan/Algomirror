@@ -7,7 +7,7 @@ import os
 import sys
 from flask import Flask
 from app import create_app, db
-from app.models import User, TradingAccount, ActivityLog
+from app.models import User, TradingAccount, ActivityLog, TradingHoursTemplate, TradingSession, MarketHoliday
 
 def init_database():
     """Initialize the database with tables"""
@@ -27,10 +27,23 @@ def init_database():
             accounts_count = TradingAccount.query.count()
             logs_count = ActivityLog.query.count()
             
+            # Initialize trading hours defaults
+            from app.utils.init_trading_hours import init_trading_hours_defaults
+            try:
+                init_trading_hours_defaults()
+                templates_count = TradingHoursTemplate.query.count()
+                holidays_count = MarketHoliday.query.count()
+            except Exception as e:
+                print(f"[WARNING] Could not initialize trading hours defaults: {e}")
+                templates_count = 0
+                holidays_count = 0
+            
             print(f"\n[INFO] Database Statistics:")
             print(f"   Users: {users_count}")
             print(f"   Trading Accounts: {accounts_count}")
             print(f"   Activity Logs: {logs_count}")
+            print(f"   Trading Templates: {templates_count}")
+            print(f"   Market Holidays: {holidays_count}")
             
             if users_count == 0:
                 print("\n[INFO] No users found in database.")
@@ -69,6 +82,14 @@ def reset_database():
             # Recreate tables
             db.create_all()
             print("[SUCCESS] Database tables recreated")
+            
+            # Initialize trading hours defaults
+            from app.utils.init_trading_hours import init_trading_hours_defaults
+            try:
+                init_trading_hours_defaults()
+                print("[SUCCESS] Trading hours defaults initialized")
+            except Exception as e:
+                print(f"[WARNING] Could not initialize trading hours defaults: {e}")
             
             print("\n[INFO] No default users created.")
             print("   The first user to register will automatically become an admin.")

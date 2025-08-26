@@ -7,6 +7,7 @@ from app.models import TradingAccount, ActivityLog
 from app import db
 from app.utils.openalgo_client import ExtendedOpenAlgoAPI
 from app.utils.rate_limiter import api_rate_limit, heavy_rate_limit
+from app.utils.background_service import option_chain_service
 import json
 
 def log_activity(action, details=None, account_id=None):
@@ -112,6 +113,11 @@ def add():
                 'broker_name': account.broker_name
             }, account.id)
             
+            # If this is a primary account, trigger background service
+            if account.is_primary:
+                option_chain_service.on_primary_account_connected(account)
+                current_app.logger.info(f'Triggered option chain service for primary account: {account.account_name}')
+            
             flash(f'Account "{account.account_name}" added successfully!', 'success')
             return redirect(url_for('accounts.manage'))
             
@@ -184,6 +190,11 @@ def edit(account_id):
                 'account_name': account.account_name
             }, account.id)
             
+            # If this became the primary account, trigger background service
+            if account.is_primary:
+                option_chain_service.on_primary_account_connected(account)
+                current_app.logger.info(f'Triggered option chain service for primary account: {account.account_name}')
+            
             flash(f'Account "{account.account_name}" updated successfully!', 'success')
             return redirect(url_for('accounts.manage'))
             
@@ -213,10 +224,16 @@ def delete(account_id):
     
     try:
         account_name = account.account_name
+        was_primary = account.is_primary
         
         log_activity('account_deleted', {
             'account_name': account_name
         }, account.id)
+        
+        # If deleting primary account, notify background service
+        if was_primary:
+            option_chain_service.on_account_disconnected(account)
+            current_app.logger.info(f'Notified option chain service of primary account deletion: {account_name}')
         
         db.session.delete(account)
         db.session.commit()

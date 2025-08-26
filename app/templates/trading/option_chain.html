@@ -1,0 +1,339 @@
+{% extends "layout.html" %}
+
+{% block title %}Option Chain - AlgoMirror{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <h1 class="text-3xl font-bold">Option Chain</h1>
+        <div class="flex gap-2">
+            <select id="underlyingSelect" class="select select-bordered">
+                <option value="NIFTY" {% if underlying == 'NIFTY' %}selected{% endif %}>NIFTY</option>
+                <option value="BANKNIFTY" {% if underlying == 'BANKNIFTY' %}selected{% endif %}>BANKNIFTY</option>
+            </select>
+            <select id="expirySelect" class="select select-bordered">
+                {% if available_expiries %}
+                    {% for exp in available_expiries %}
+                        <option value="{{ exp }}" {% if exp == expiry %}selected{% endif %}>{{ exp }}</option>
+                    {% endfor %}
+                {% endif %}
+            </select>
+            <button class="btn btn-primary" onclick="refreshOptionChain()">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                    </path>
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-error mb-6">
+        <svg class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" 
+                  d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <span>{{ error }}</span>
+    </div>
+    {% endif %}
+
+    {% if chain_data %}
+    <!-- Market Info -->
+    <div class="stats shadow mb-6">
+        <div class="stat">
+            <div class="stat-title">{{ chain_data.underlying }} Spot</div>
+            <div class="stat-value text-primary">{{ "%.2f"|format(chain_data.underlying_ltp) }}</div>
+            <div class="stat-desc">
+                Bid: {{ "%.2f"|format(chain_data.underlying_bid) }} | 
+                Ask: {{ "%.2f"|format(chain_data.underlying_ask) }}
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">ATM Strike</div>
+            <div class="stat-value">{{ chain_data.atm_strike }}</div>
+            <div class="stat-desc">Expiry: {{ chain_data.expiry }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">PCR</div>
+            <div class="stat-value {% if chain_data.market_metrics.pcr > 1 %}text-success{% else %}text-warning{% endif %}">
+                {{ "%.2f"|format(chain_data.market_metrics.pcr) }}
+            </div>
+            <div class="stat-desc">Put/Call Ratio</div>
+        </div>
+        <div class="stat">
+            <div class="stat-title">Total Volume</div>
+            <div class="stat-value text-sm">
+                CE: {{ "{:,}".format(chain_data.market_metrics.total_ce_volume) }}
+                <br>
+                PE: {{ "{:,}".format(chain_data.market_metrics.total_pe_volume) }}
+            </div>
+        </div>
+    </div>
+
+    <!-- Option Chain Table -->
+    <div class="overflow-x-auto shadow-xl rounded-lg">
+        <table class="table table-compact w-full">
+            <thead>
+                <tr class="bg-base-200">
+                    <!-- CE Side -->
+                    <th class="text-right">OI</th>
+                    <th class="text-right">Volume</th>
+                    <th class="text-right">Bid Qty</th>
+                    <th class="text-right">Bid</th>
+                    <th class="text-right font-bold">LTP</th>
+                    <th class="text-right">Ask</th>
+                    <th class="text-right">Ask Qty</th>
+                    <th class="text-right">Spread</th>
+                    <!-- Strike Info -->
+                    <th class="text-center bg-base-300 font-bold">Strike</th>
+                    <th class="text-center bg-base-300">Tag</th>
+                    <!-- PE Side -->
+                    <th class="text-left">Spread</th>
+                    <th class="text-left">Ask Qty</th>
+                    <th class="text-left">Ask</th>
+                    <th class="text-left font-bold">LTP</th>
+                    <th class="text-left">Bid</th>
+                    <th class="text-left">Bid Qty</th>
+                    <th class="text-left">Volume</th>
+                    <th class="text-left">OI</th>
+                </tr>
+            </thead>
+            <tbody id="optionChainData">
+                {% for option in chain_data.options %}
+                <tr class="hover {% if option.tag == 'ATM' %}bg-primary/10 font-bold{% elif 'ITM' in option.tag %}bg-success/5{% else %}bg-warning/5{% endif %}"
+                    data-strike="{{ option.strike }}" data-tag="{{ option.tag }}">
+                    <!-- CE Data -->
+                    <td class="text-right">{{ "{:,}".format(option.ce_data.oi) }}</td>
+                    <td class="text-right">{{ "{:,}".format(option.ce_data.volume) }}</td>
+                    <td class="text-right">{{ option.ce_data.bid_qty }}</td>
+                    <td class="text-right text-error">{{ "%.2f"|format(option.ce_data.bid) }}</td>
+                    <td class="text-right font-bold ce-ltp">{{ "%.2f"|format(option.ce_data.ltp) }}</td>
+                    <td class="text-right text-success">{{ "%.2f"|format(option.ce_data.ask) }}</td>
+                    <td class="text-right">{{ option.ce_data.ask_qty }}</td>
+                    <td class="text-right {% if option.ce_data.spread > 1 %}text-warning{% else %}text-success{% endif %}">
+                        {{ "%.2f"|format(option.ce_data.spread) }}
+                    </td>
+                    <!-- Strike -->
+                    <td class="text-center bg-base-300 font-bold">{{ option.strike }}</td>
+                    <td class="text-center bg-base-300">
+                        <span class="badge {% if option.tag == 'ATM' %}badge-primary{% elif 'ITM' in option.tag %}badge-success{% else %}badge-warning{% endif %}">
+                            {{ option.tag }}
+                        </span>
+                    </td>
+                    <!-- PE Data -->
+                    <td class="text-left {% if option.pe_data.spread > 1 %}text-warning{% else %}text-success{% endif %}">
+                        {{ "%.2f"|format(option.pe_data.spread) }}
+                    </td>
+                    <td class="text-left">{{ option.pe_data.ask_qty }}</td>
+                    <td class="text-left text-success">{{ "%.2f"|format(option.pe_data.ask) }}</td>
+                    <td class="text-left font-bold pe-ltp">{{ "%.2f"|format(option.pe_data.ltp) }}</td>
+                    <td class="text-left text-error">{{ "%.2f"|format(option.pe_data.bid) }}</td>
+                    <td class="text-left">{{ option.pe_data.bid_qty }}</td>
+                    <td class="text-left">{{ "{:,}".format(option.pe_data.volume) }}</td>
+                    <td class="text-left">{{ "{:,}".format(option.pe_data.oi) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- WebSocket Status -->
+    <div class="mt-6 flex justify-between items-center">
+        <div class="flex items-center gap-2">
+            <span class="text-sm text-base-content/60">Connection Status:</span>
+            <span id="wsStatus" class="badge badge-success">Disconnected</span>
+        </div>
+        <div class="text-sm text-base-content/60">
+            Last Update: <span id="lastUpdate">-</span>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Custom styles for option chain */
+.table-compact th, .table-compact td {
+    padding: 0.5rem 0.75rem;
+}
+
+/* Highlight spreads */
+.spread-tight { background-color: rgba(74, 222, 128, 0.1); }
+.spread-normal { background-color: rgba(251, 191, 36, 0.1); }
+.spread-wide { background-color: rgba(248, 113, 113, 0.1); }
+
+/* Animation for price changes */
+.price-up {
+    animation: flash-green 1s;
+}
+
+.price-down {
+    animation: flash-red 1s;
+}
+
+@keyframes flash-green {
+    0% { background-color: rgba(74, 222, 128, 0.3); }
+    100% { background-color: transparent; }
+}
+
+@keyframes flash-red {
+    0% { background-color: rgba(248, 113, 113, 0.3); }
+    100% { background-color: transparent; }
+}
+</style>
+
+<script>
+let eventSource = null;
+let previousData = {};
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Start real-time updates if chain data exists
+    {% if chain_data %}
+    startRealTimeUpdates();
+    {% endif %}
+    
+    // Handle underlying change
+    document.getElementById('underlyingSelect').addEventListener('change', function() {
+        refreshOptionChain();
+    });
+    
+    // Handle expiry change
+    document.getElementById('expirySelect').addEventListener('change', function() {
+        refreshOptionChain();
+    });
+});
+
+function startRealTimeUpdates() {
+    // Close existing connection if any
+    if (eventSource) {
+        eventSource.close();
+    }
+    
+    const underlying = document.getElementById('underlyingSelect').value;
+    const expiry = document.getElementById('expirySelect').value;
+    
+    // Create SSE connection
+    eventSource = new EventSource(`/trading/api/option-chain/stream?underlying=${underlying}&expiry=${expiry}`);
+    
+    eventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            
+            if (data.error) {
+                console.error('SSE Error:', data.error);
+                updateStatus('Error', 'badge-error');
+            } else {
+                updateOptionChain(data);
+                updateStatus('Connected', 'badge-success');
+                document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+            }
+        } catch (e) {
+            console.error('Parse error:', e);
+        }
+    };
+    
+    eventSource.onerror = function(error) {
+        console.error('SSE Connection error:', error);
+        updateStatus('Disconnected', 'badge-error');
+    };
+}
+
+function updateOptionChain(data) {
+    // Update market info
+    updateMarketInfo(data);
+    
+    // Update option chain table
+    data.options.forEach(option => {
+        updateOptionRow(option);
+    });
+}
+
+function updateMarketInfo(data) {
+    // Update spot price
+    const spotElement = document.querySelector('.stat-value.text-primary');
+    if (spotElement) {
+        spotElement.textContent = data.underlying_ltp.toFixed(2);
+    }
+    
+    // Update PCR
+    const pcrElement = document.querySelector('.stat-value').nextElementSibling;
+    if (pcrElement && data.market_metrics.pcr) {
+        pcrElement.textContent = data.market_metrics.pcr.toFixed(2);
+    }
+}
+
+function updateOptionRow(option) {
+    const row = document.querySelector(`tr[data-strike="${option.strike}"]`);
+    if (!row) return;
+    
+    // Update CE LTP with animation
+    const ceLtpElement = row.querySelector('.ce-ltp');
+    if (ceLtpElement) {
+        const oldValue = parseFloat(ceLtpElement.textContent);
+        const newValue = option.ce_data.ltp;
+        
+        if (oldValue !== newValue) {
+            ceLtpElement.textContent = newValue.toFixed(2);
+            ceLtpElement.classList.add(newValue > oldValue ? 'price-up' : 'price-down');
+            setTimeout(() => {
+                ceLtpElement.classList.remove('price-up', 'price-down');
+            }, 1000);
+        }
+    }
+    
+    // Update PE LTP with animation
+    const peLtpElement = row.querySelector('.pe-ltp');
+    if (peLtpElement) {
+        const oldValue = parseFloat(peLtpElement.textContent);
+        const newValue = option.pe_data.ltp;
+        
+        if (oldValue !== newValue) {
+            peLtpElement.textContent = newValue.toFixed(2);
+            peLtpElement.classList.add(newValue > oldValue ? 'price-up' : 'price-down');
+            setTimeout(() => {
+                peLtpElement.classList.remove('price-up', 'price-down');
+            }, 1000);
+        }
+    }
+    
+    // Update other fields (bid, ask, spread, etc.)
+    updateCellValue(row, 3, option.ce_data.bid.toFixed(2));
+    updateCellValue(row, 5, option.ce_data.ask.toFixed(2));
+    updateCellValue(row, 7, option.ce_data.spread.toFixed(2));
+    
+    updateCellValue(row, 14, option.pe_data.bid.toFixed(2));
+    updateCellValue(row, 12, option.pe_data.ask.toFixed(2));
+    updateCellValue(row, 10, option.pe_data.spread.toFixed(2));
+}
+
+function updateCellValue(row, cellIndex, value) {
+    const cell = row.cells[cellIndex];
+    if (cell && cell.textContent !== value) {
+        cell.textContent = value;
+    }
+}
+
+function updateStatus(text, className) {
+    const statusElement = document.getElementById('wsStatus');
+    statusElement.textContent = text;
+    statusElement.className = `badge ${className}`;
+}
+
+function refreshOptionChain() {
+    const underlying = document.getElementById('underlyingSelect').value;
+    const expiry = document.getElementById('expirySelect').value;
+    
+    window.location.href = `/trading/option-chain?underlying=${underlying}&expiry=${expiry}`;
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    if (eventSource) {
+        eventSource.close();
+    }
+});
+</script>
+{% endblock %}
