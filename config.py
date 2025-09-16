@@ -15,6 +15,10 @@ class Config:
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
+
+    # For SQLAlchemy sessions (when SESSION_TYPE=sqlalchemy)
+    SESSION_SQLALCHEMY_TABLE = 'sessions'
+    SESSION_SQLALCHEMY = None  # Will be set to db in app init
     
     # Security
     WTF_CSRF_ENABLED = True

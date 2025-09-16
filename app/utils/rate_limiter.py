@@ -36,12 +36,13 @@ def init_rate_limiter(app):
 # Specific rate limit decorators for different endpoints
 def auth_rate_limit():
     """Rate limit for authentication endpoints"""
-    return limiter.limit("10 per minute")
+    # Increased for better user experience, especially for single-user apps
+    return limiter.limit("60 per minute")
 
 def api_rate_limit():
     """Rate limit for API endpoints"""
-    return limiter.limit("100 per minute")
+    return limiter.limit("300 per minute")
 
 def heavy_rate_limit():
     """Rate limit for resource-intensive endpoints"""
-    return limiter.limit("20 per minute")
+    return limiter.limit("60 per minute")

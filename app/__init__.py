@@ -85,6 +85,11 @@ def create_app(config_name=None):
     login_manager.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
+
+    # Configure session to use database if sqlalchemy type
+    if app.config.get('SESSION_TYPE') == 'sqlalchemy':
+        app.config['SESSION_SQLALCHEMY'] = db
+
     sess.init_app(app)
     
     # Initialize rate limiter
