@@ -447,7 +447,7 @@ function toggleStrikeInput(select) {
 // Save strategy
 function saveStrategy(execute = false) {
     const legs = [];
-    document.querySelectorAll('.leg-item').forEach(legItem => {
+    document.querySelectorAll('.leg-item').forEach((legItem, index) => {
         const strikeSelect = legItem.querySelector('.leg-strike-selection');
         const selectedOption = strikeSelect?.options[strikeSelect.selectedIndex];
         const strikeValue = legItem.querySelector('.leg-strike-value').value;
