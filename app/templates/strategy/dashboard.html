@@ -112,6 +112,8 @@
                             <th>Type</th>
                             <th>Risk Profile</th>
                             <th>Accounts</th>
+                            <th>Positions</th>
+                            <th>P&L</th>
                             <th>Status</th>
                             <th>Actions</th>
                         </tr>
@@ -132,6 +134,12 @@
                             </td>
                             <td>{{ strategy.selected_accounts|length if strategy.selected_accounts else 0 }}</td>
                             <td>
+                                <span class="badge badge-outline badge-sm" id="positions-{{ strategy.id }}">0</span>
+                            </td>
+                            <td>
+                                <span class="font-semibold" id="pnl-{{ strategy.id }}">₹0</span>
+                            </td>
+                            <td>
                                 {% if strategy.is_active %}
                                 <span class="badge badge-success badge-sm">Active</span>
                                 {% else %}
@@ -141,11 +149,9 @@
                             <td>
                                 <div class="flex gap-2">
                                     <button onclick="executeStrategy({{ strategy.id }})" class="btn btn-primary btn-xs">Execute</button>
-                                    <a href="{{ url_for('strategy.builder', strategy_id=strategy.id) }}" class="btn btn-ghost btn-xs">Edit</a>
-                                    <button onclick="toggleStrategy({{ strategy.id }})" class="btn btn-ghost btn-xs">
-                                        {% if strategy.is_active %}Pause{% else %}Activate{% endif %}
-                                    </button>
-                                    <button onclick="deleteStrategy({{ strategy.id }})" class="btn btn-error btn-xs">Delete</button>
+                                    <a href="{{ url_for('strategy.builder', strategy_id=strategy.id) }}" class="btn btn-ghost btn-xs">View</a>
+                                    <button id="close-btn-{{ strategy.id }}" onclick="closePositions({{ strategy.id }})" class="btn btn-error btn-xs" style="display: none;">Close</button>
+                                    <button onclick="deleteStrategy({{ strategy.id }})" class="btn btn-ghost btn-xs">Delete</button>
                                 </div>
                             </td>
                         </tr>
@@ -182,10 +188,22 @@ function executeStrategy(strategyId) {
         })
         .then(response => response.json())
         .then(data => {
+            // Handle different execution statuses
             if (data.status === 'success') {
-                showNotification('Strategy executed successfully', 'success');
+                showNotification(data.message || 'Strategy executed successfully', 'success');
                 setTimeout(() => location.reload(), 1500);
+            } else if (data.status === 'warning') {
+                // Orders were skipped (e.g., insufficient margin)
+                showNotification(data.message || 'Strategy execution skipped', 'warning');
+                if (data.summary) {
+                    console.log(`Skipped: ${data.summary.skipped_orders} orders`);
+                }
+            } else if (data.status === 'partial') {
+                // Some orders succeeded, some failed/skipped
+                showNotification(data.message || 'Strategy partially executed', 'warning');
+                setTimeout(() => location.reload(), 2000);
             } else {
+                // Error status
                 showNotification(data.message || 'Failed to execute strategy', 'error');
             }
         })
@@ -195,6 +213,92 @@ function executeStrategy(strategyId) {
         });
     }
 }
+
+// Load strategy positions and P&L data
+async function loadStrategyMetrics() {
+    const strategies = {{ strategies_json|tojson }};
+
+    for (const strategy of strategies.slice(0, 5)) {
+        try {
+            // Load positions
+            const posResponse = await fetch(`/strategy/${strategy.id}/positions`);
+            const posData = await posResponse.json();
+
+            let totalPnl = 0;
+            let positionCount = 0;
+
+            if (posData.status === 'success' && posData.data) {
+                const positions = posData.data || [];
+                positionCount = positions.length;
+
+                // Calculate total P&L from positions
+                positions.forEach(pos => {
+                    totalPnl += parseFloat(pos.pnl) || 0;
+                });
+
+                const posElement = document.getElementById(`positions-${strategy.id}`);
+                if (posElement) {
+                    posElement.textContent = positionCount;
+                    if (positionCount > 0) {
+                        posElement.classList.add('badge-warning');
+                        // Show close button if there are open positions
+                        const closeBtn = document.getElementById(`close-btn-${strategy.id}`);
+                        if (closeBtn) {
+                            closeBtn.style.display = 'inline-flex';
+                        }
+                    }
+                }
+
+                // Update P&L
+                const pnlElement = document.getElementById(`pnl-${strategy.id}`);
+                if (pnlElement) {
+                    pnlElement.textContent = `₹${totalPnl.toFixed(2)}`;
+                    pnlElement.className = totalPnl >= 0 ? 'font-semibold text-success' : 'font-semibold text-error';
+                }
+            }
+        } catch (error) {
+            console.error(`Error loading metrics for strategy ${strategy.id}:`, error);
+        }
+    }
+}
+
+// Close positions for a strategy
+async function closePositions(strategyId) {
+    if (!confirm('Are you sure you want to close all positions for this strategy?')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/strategy/${strategyId}/close-all`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showNotification(data.message + ` Total P&L: ₹${data.total_pnl.toFixed(2)}`, 'success');
+            // Reload metrics
+            loadStrategyMetrics();
+        } else {
+            showNotification(data.message || 'Failed to close positions', 'error');
+        }
+    } catch (error) {
+        console.error('Error closing positions:', error);
+        showNotification('Error closing positions', 'error');
+    }
+}
+
+// Load metrics on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadStrategyMetrics();
+
+    // Auto-refresh every 10 seconds
+    setInterval(loadStrategyMetrics, 10000);
+});
 
 // Toggle Strategy Active Status
 function toggleStrategy(strategyId) {
@@ -250,13 +354,24 @@ function deleteStrategy(strategyId) {
 function showNotification(message, type) {
     const toast = document.createElement('div');
     toast.className = `toast toast-end`;
+
+    // Map type to appropriate alert class
+    let alertClass = 'alert-info';
+    if (type === 'success') {
+        alertClass = 'alert-success';
+    } else if (type === 'error') {
+        alertClass = 'alert-error';
+    } else if (type === 'warning') {
+        alertClass = 'alert-warning';
+    }
+
     toast.innerHTML = `
-        <div class="alert alert-${type === 'success' ? 'success' : 'error'}">
+        <div class="alert ${alertClass}">
             <span>${message}</span>
         </div>
     `;
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    setTimeout(() => toast.remove(), 5000);  // Show for 5 seconds for important messages
 }
 
 // Load active positions

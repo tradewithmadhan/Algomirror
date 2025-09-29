@@ -347,6 +347,7 @@ class StrategyExecution(db.Model):
 
     # Status tracking
     status = db.Column(db.String(50))  # 'pending', 'entered', 'exited', 'stopped', 'error'
+    broker_order_status = db.Column(db.String(50))  # Actual status from broker: 'complete', 'open', 'rejected', etc.
     entry_time = db.Column(db.DateTime)
     exit_time = db.Column(db.DateTime)
 
@@ -645,22 +646,36 @@ class MarginTracker(db.Model):
         self.exposure_margin = funds_data.get('exposuremargin', 0)
         self.option_premium = funds_data.get('optionpremium', 0)
         self.last_updated = datetime.utcnow()
-        self.update_count += 1
+        # Handle None case for update_count
+        if self.update_count is None:
+            self.update_count = 1
+        else:
+            self.update_count += 1
 
     def allocate_margin(self, trade_id, margin_amount):
         """Allocate margin to a specific trade"""
         if not self.allocated_margins:
             self.allocated_margins = {}
         self.allocated_margins[str(trade_id)] = margin_amount
-        self.used_margin += margin_amount
-        self.free_margin -= margin_amount
+        # Handle None cases
+        if self.used_margin is None:
+            self.used_margin = margin_amount
+        else:
+            self.used_margin += margin_amount
+        if self.free_margin is None:
+            self.free_margin = -margin_amount
+        else:
+            self.free_margin -= margin_amount
 
     def release_margin(self, trade_id):
         """Release margin from a completed trade"""
         if self.allocated_margins and str(trade_id) in self.allocated_margins:
             margin_amount = self.allocated_margins.pop(str(trade_id))
-            self.used_margin -= margin_amount
-            self.free_margin += margin_amount
+            # Handle None cases
+            if self.used_margin is not None:
+                self.used_margin -= margin_amount
+            if self.free_margin is not None:
+                self.free_margin += margin_amount
 
     def __repr__(self):
         return f'<MarginTracker Account {self.account_id} - Free: {self.free_margin}>'

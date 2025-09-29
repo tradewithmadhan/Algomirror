@@ -36,8 +36,28 @@ def dashboard():
     # Get active strategy count
     active_strategies = [s for s in strategies if s.is_active]
 
+    # Convert strategies to dictionaries for JSON serialization
+    strategies_data = []
+    for strategy in strategies:
+        strategies_data.append({
+            'id': strategy.id,
+            'name': strategy.name,
+            'description': strategy.description,
+            'market_condition': strategy.market_condition,
+            'risk_profile': strategy.risk_profile,
+            'is_active': strategy.is_active,
+            'created_at': strategy.created_at.isoformat() if strategy.created_at else None,
+            'updated_at': strategy.updated_at.isoformat() if strategy.updated_at else None,
+            'selected_accounts': strategy.selected_accounts or [],
+            'allocation_type': strategy.allocation_type,
+            'max_loss': strategy.max_loss,
+            'max_profit': strategy.max_profit,
+            'trailing_sl': strategy.trailing_sl
+        })
+
     return render_template('strategy/dashboard.html',
                          strategies=strategies,
+                         strategies_json=strategies_data,
                          accounts=accounts,
                          today_pnl=today_pnl,
                          active_strategies=len(active_strategies))
@@ -187,25 +207,61 @@ def execute_strategy(strategy_id):
 
         logger.info(f"Executing strategy {strategy_id} ({strategy.name}) with {leg_count} legs")
 
+        # Check if any leg has explicit quantity set
+        has_explicit_quantities = any(leg.quantity and leg.quantity > 0 for leg in strategy.legs)
+
+        # If explicit quantities are set, disable margin calculator
+        use_margin_calc = not has_explicit_quantities
+
+        if has_explicit_quantities:
+            logger.info(f"Strategy {strategy_id}: Using explicit quantities, bypassing margin calculator")
+        else:
+            logger.info(f"Strategy {strategy_id}: Using margin calculator for lot sizing")
+
         # Initialize strategy executor
-        executor = StrategyExecutor(strategy)
+        executor = StrategyExecutor(strategy, use_margin_calculator=use_margin_calc)
 
         # Execute strategy
         results = executor.execute()
 
-        # Count successful and failed executions
+        # Count successful, failed, and skipped executions
         successful = sum(1 for r in results if r.get('status') == 'success')
         failed = sum(1 for r in results if r.get('status') in ['failed', 'error'])
+        skipped = sum(1 for r in results if r.get('status') == 'skipped')
+
+        # Determine overall status and message
+        if successful == 0 and skipped > 0:
+            # All orders were skipped
+            overall_status = 'warning'
+            message = f'Strategy execution skipped: Insufficient margin for all {skipped} orders'
+        elif successful == 0 and failed > 0:
+            # All orders failed
+            overall_status = 'error'
+            message = f'Strategy execution failed: All {failed} orders failed'
+        elif successful > 0 and (failed > 0 or skipped > 0):
+            # Mixed results
+            overall_status = 'partial'
+            message = f'Strategy partially executed: {successful} successful, {failed} failed, {skipped} skipped'
+        elif successful > 0:
+            # All successful
+            overall_status = 'success'
+            message = f'Strategy executed successfully: {successful} orders placed'
+        else:
+            # No orders processed
+            overall_status = 'error'
+            message = 'No orders were processed'
 
         return jsonify({
-            'status': 'success',
-            'message': f'Strategy executed: {successful} successful, {failed} failed',
+            'status': overall_status,
+            'message': message,
             'results': results,
             'summary': {
                 'total_legs': leg_count,
                 'accounts': len(strategy.selected_accounts),
                 'successful_orders': successful,
-                'failed_orders': failed
+                'failed_orders': failed,
+                'skipped_orders': skipped,
+                'total_attempts': len(results)
             }
         })
 
@@ -288,6 +344,272 @@ def delete_strategy(strategy_id):
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error deleting strategy {strategy_id}: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 500
+
+@strategy_bp.route('/<int:strategy_id>/orderbook', methods=['GET'])
+@login_required
+def strategy_orderbook(strategy_id):
+    """Get strategy-level orderbook (OpenAlgo format)"""
+    strategy = Strategy.query.filter_by(
+        id=strategy_id,
+        user_id=current_user.id
+    ).first_or_404()
+
+    # Get all executions for this strategy
+    executions = StrategyExecution.query.filter_by(
+        strategy_id=strategy_id
+    ).join(TradingAccount).join(StrategyLeg).all()
+
+    orders = []
+    for execution in executions:
+        # Use actual broker order status if available, otherwise map from execution status
+        if hasattr(execution, 'broker_order_status') and execution.broker_order_status:
+            order_status = execution.broker_order_status
+        else:
+            # Fallback to mapping from execution status
+            order_status = execution.status
+            if order_status == 'entered':
+                order_status = 'complete'
+            elif order_status == 'exited':
+                order_status = 'complete'
+            elif order_status == 'failed':
+                order_status = 'rejected'
+            elif order_status == 'pending':
+                order_status = 'open'
+
+        orders.append({
+            'action': execution.leg.action,
+            'symbol': execution.symbol,
+            'exchange': execution.exchange,
+            'orderid': execution.order_id or f"STG_{execution.id}",
+            'product': execution.leg.product_type.upper() if execution.leg.product_type else 'MIS',
+            'quantity': str(execution.quantity),
+            'price': execution.entry_price or 0.0,
+            'pricetype': execution.leg.order_type or 'MARKET',
+            'order_status': order_status,
+            'trigger_price': 0.0,
+            'timestamp': execution.entry_time.strftime('%d-%b-%Y %H:%M:%S') if execution.entry_time else ""
+        })
+
+    # Calculate statistics like OpenAlgo
+    statistics = {
+        'total_buy_orders': float(len([o for o in orders if o['action'] == 'BUY'])),
+        'total_sell_orders': float(len([o for o in orders if o['action'] == 'SELL'])),
+        'total_completed_orders': float(len([o for o in orders if o['order_status'] == 'complete'])),
+        'total_open_orders': float(len([o for o in orders if o['order_status'] == 'open'])),
+        'total_rejected_orders': float(len([o for o in orders if o['order_status'] == 'rejected']))
+    }
+
+    return jsonify({
+        'status': 'success',
+        'data': {
+            'orders': orders,
+            'statistics': statistics
+        }
+    })
+
+@strategy_bp.route('/<int:strategy_id>/tradebook', methods=['GET'])
+@login_required
+def strategy_tradebook(strategy_id):
+    """Get strategy-level tradebook (OpenAlgo format)"""
+    strategy = Strategy.query.filter_by(
+        id=strategy_id,
+        user_id=current_user.id
+    ).first_or_404()
+
+    # Get executed trades
+    trades = StrategyExecution.query.filter(
+        StrategyExecution.strategy_id == strategy_id,
+        StrategyExecution.status.in_(['entered', 'exited'])
+    ).join(TradingAccount).join(StrategyLeg).all()
+
+    data = []
+    for trade in trades:
+        # Calculate average price and trade value
+        avg_price = trade.entry_price or 0.0
+        if trade.exit_price and trade.status == 'exited':
+            avg_price = (trade.entry_price + trade.exit_price) / 2
+
+        trade_value = avg_price * trade.quantity
+
+        data.append({
+            'action': trade.leg.action,
+            'symbol': trade.symbol,
+            'exchange': trade.exchange,
+            'orderid': trade.order_id or f"STG_{trade.id}",
+            'product': trade.leg.product_type.upper() if trade.leg.product_type else 'MIS',
+            'quantity': 0.0,  # OpenAlgo format shows 0.0 for executed trades
+            'average_price': avg_price,
+            'timestamp': trade.entry_time.strftime('%H:%M:%S') if trade.entry_time else "",
+            'trade_value': trade_value
+        })
+
+    return jsonify({
+        'status': 'success',
+        'data': data
+    })
+
+@strategy_bp.route('/<int:strategy_id>/positions', methods=['GET'])
+@login_required
+def strategy_positions(strategy_id):
+    """Get strategy-level open positions (OpenAlgo format)"""
+    strategy = Strategy.query.filter_by(
+        id=strategy_id,
+        user_id=current_user.id
+    ).first_or_404()
+
+    # Get open positions
+    positions = StrategyExecution.query.filter_by(
+        strategy_id=strategy_id,
+        status='entered'
+    ).join(TradingAccount).join(StrategyLeg).all()
+
+    from app.utils.openalgo_client import ExtendedOpenAlgoAPI
+
+    data = []
+    for position in positions:
+        # Get current price for P&L calculation
+        try:
+            client = ExtendedOpenAlgoAPI(
+                api_key=position.account.get_api_key(),
+                host=position.account.host_url
+            )
+            quote = client.quotes(symbol=position.symbol, exchange=position.exchange)
+            ltp = float(quote.get('data', {}).get('ltp', position.entry_price))
+        except:
+            ltp = position.entry_price or 0
+
+        # Calculate P&L based on action
+        quantity = position.quantity
+        if position.leg.action == 'SELL':
+            quantity = -quantity  # Negative for sell positions
+
+        # Calculate P&L
+        if position.leg.action == 'BUY':
+            pnl = (ltp - (position.entry_price or 0)) * position.quantity
+        else:  # SELL
+            pnl = ((position.entry_price or 0) - ltp) * position.quantity
+
+        # Update unrealized P&L in database
+        position.unrealized_pnl = pnl
+
+        data.append({
+            'symbol': position.symbol,
+            'exchange': position.exchange,
+            'product': position.leg.product_type.upper() if position.leg.product_type else 'MIS',
+            'quantity': str(quantity),  # String format, negative for sell
+            'average_price': str(position.entry_price or 0.0),
+            'ltp': str(ltp),
+            'pnl': str(round(pnl, 2))
+        })
+
+    # Save unrealized P&L to database
+    db.session.commit()
+
+    return jsonify({
+        'status': 'success',
+        'data': data
+    })
+
+@strategy_bp.route('/<int:strategy_id>/close-all', methods=['POST'])
+@login_required
+@api_rate_limit()
+def close_all_positions(strategy_id):
+    """Close all open positions for a strategy"""
+    try:
+        strategy = Strategy.query.filter_by(
+            id=strategy_id,
+            user_id=current_user.id
+        ).first_or_404()
+
+        # Get all open positions
+        open_positions = StrategyExecution.query.filter_by(
+            strategy_id=strategy_id,
+            status='entered'
+        ).all()
+
+        if not open_positions:
+            return jsonify({
+                'status': 'error',
+                'message': 'No open positions to close'
+            }), 400
+
+        from app.utils.openalgo_client import ExtendedOpenAlgoAPI
+
+        results = []
+        for position in open_positions:
+            try:
+                # Reverse the position
+                client = ExtendedOpenAlgoAPI(
+                    api_key=position.account.get_api_key(),
+                    host=position.account.host_url
+                )
+
+                # Reverse action for closing
+                close_action = 'SELL' if position.leg.action == 'BUY' else 'BUY'
+
+                response = client.placeorder(
+                    strategy=f"Close_{strategy.name}",
+                    symbol=position.symbol,
+                    exchange=position.exchange,
+                    action=close_action,
+                    quantity=position.quantity,
+                    price_type='MARKET',
+                    product='MIS'
+                )
+
+                if response.get('status') == 'success':
+                    # Update position status
+                    position.status = 'exited'
+                    position.exit_time = datetime.utcnow()
+                    position.exit_reason = 'manual_close'
+
+                    # Get exit price
+                    quote = client.quotes(symbol=position.symbol, exchange=position.exchange)
+                    position.exit_price = float(quote.get('data', {}).get('ltp', 0))
+
+                    # Calculate realized P&L
+                    if position.leg.action == 'BUY':
+                        position.realized_pnl = (position.exit_price - position.entry_price) * position.quantity
+                    else:
+                        position.realized_pnl = (position.entry_price - position.exit_price) * position.quantity
+
+                    results.append({
+                        'symbol': position.symbol,
+                        'status': 'success',
+                        'pnl': position.realized_pnl
+                    })
+                else:
+                    results.append({
+                        'symbol': position.symbol,
+                        'status': 'failed',
+                        'error': response.get('message')
+                    })
+
+            except Exception as e:
+                results.append({
+                    'symbol': position.symbol,
+                    'status': 'error',
+                    'error': str(e)
+                })
+
+        db.session.commit()
+
+        total_pnl = sum(r.get('pnl', 0) for r in results if r.get('status') == 'success')
+        successful = len([r for r in results if r.get('status') == 'success'])
+
+        return jsonify({
+            'status': 'success',
+            'message': f'Closed {successful}/{len(open_positions)} positions',
+            'total_pnl': total_pnl,
+            'results': results
+        })
+
+    except Exception as e:
+        logger.error(f"Error closing positions for strategy {strategy_id}: {e}")
         return jsonify({
             'status': 'error',
             'message': str(e)

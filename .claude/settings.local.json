@@ -10,7 +10,14 @@
       "Bash(taskkill:*)",
       "Bash(netstat:*)",
       "Bash(dir logs)",
-      "Bash(dir /s /b D:openalgo-multialgomirrorapp)"
+      "Bash(dir /s /b D:openalgo-multialgomirrorapp)",
+      "Bash(curl -s http://127.0.0.1:8000/strategy/ -o /dev/null -w \"%{http_code}\")",
+      "Bash(powershell:*)",
+      "Bash(del test_fixes.py)",
+      "Bash(curl:*)",
+      "Bash(dir migrations)",
+      "Bash(del algomirror.db)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

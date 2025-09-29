@@ -224,6 +224,15 @@ class StrategyExecutor:
             print(f"[ORDER RESPONSE] {response}")
 
             if response.get('status') == 'success':
+                order_id = response.get('orderid')
+
+                # Wait a moment for order to be processed
+                import time
+                time.sleep(1)
+
+                # Fetch actual order status
+                order_status_data = self._get_order_status(client, order_id, self.strategy.name)
+
                 # Create execution record within app context
                 app = create_app()
                 with app.app_context():
@@ -231,12 +240,14 @@ class StrategyExecutor:
                         strategy_id=self.strategy.id,
                         account_id=account_id,
                         leg_id=leg.id,
-                        order_id=response.get('orderid'),
+                        order_id=order_id,
                         symbol=symbol,
                         exchange=exchange,
                         quantity=quantity,
                         status='entered',
-                        entry_time=datetime.utcnow()
+                        broker_order_status=order_status_data.get('order_status', 'pending') if order_status_data else 'pending',
+                        entry_time=datetime.utcnow(),
+                        entry_price=order_status_data.get('price', 0) if order_status_data else None
                     )
 
                     with self.lock:
@@ -246,8 +257,10 @@ class StrategyExecutor:
                         results.append({
                             'account': account_name,
                             'symbol': symbol,
-                            'order_id': response.get('orderid'),
+                            'order_id': order_id,
                             'status': 'success',
+                            'order_status': order_status_data.get('order_status', 'pending') if order_status_data else 'pending',
+                            'executed_price': order_status_data.get('price', 0) if order_status_data else 0,
                             'leg': leg.leg_number
                         })
 
@@ -274,6 +287,25 @@ class StrategyExecutor:
                     'error': str(e),
                     'leg': leg.leg_number
                 })
+
+    def _get_order_status(self, client: ExtendedOpenAlgoAPI, order_id: str, strategy_name: str) -> Dict:
+        """Fetch order status from broker using OpenAlgo API"""
+        try:
+            response = client.orderstatus(
+                order_id=order_id,
+                strategy=strategy_name
+            )
+
+            if response.get('status') == 'success':
+                data = response.get('data', {})
+                logger.info(f"Order {order_id} status: {data.get('order_status')} at price {data.get('price')}")
+                return data
+            else:
+                logger.warning(f"Failed to get order status for {order_id}: {response.get('message')}")
+                return {}
+        except Exception as e:
+            logger.error(f"Error fetching order status for {order_id}: {e}")
+            return {}
 
     def _start_exit_monitoring_async(self, execution_id: int):
         """Start exit monitoring for an execution (async version)"""

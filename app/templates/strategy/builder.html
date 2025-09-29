@@ -127,6 +127,129 @@
             </div>
         </div>
 
+        {% if strategy %}
+        <!-- Strategy Execution Tracking Section -->
+
+        <!-- Tabs for Orderbook, Tradebook, Positions -->
+        <div class="card bg-base-100 shadow-lg mb-6">
+            <div class="card-body">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="card-title">Strategy Execution Tracking</h2>
+                    <div class="flex gap-2">
+                        <button type="button" onclick="refreshStrategyData()" class="btn btn-ghost btn-sm">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                            </svg>
+                            Refresh
+                        </button>
+                        <button type="button" onclick="closeAllPositions()" class="btn btn-error btn-sm">
+                            <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                            Close All Positions
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tabs -->
+                <div class="tabs tabs-boxed mb-4">
+                    <a class="tab tab-active" onclick="showStrategyTab('orderbook', this)">Orderbook</a>
+                    <a class="tab" onclick="showStrategyTab('tradebook', this)">Tradebook</a>
+                    <a class="tab" onclick="showStrategyTab('positions', this)">Positions</a>
+                </div>
+
+                <!-- Orderbook Tab -->
+                <div id="orderbook-tab" class="strategy-tab">
+                    <div id="order-stats" class="mb-4"></div>
+                    <div class="overflow-x-auto">
+                        <table class="table table-compact">
+                            <thead>
+                                <tr>
+                                    <th>Order ID</th>
+                                    <th>Symbol</th>
+                                    <th>Exchange</th>
+                                    <th>Product</th>
+                                    <th>Action</th>
+                                    <th>Qty</th>
+                                    <th>Price</th>
+                                    <th>Status</th>
+                                    <th>Timestamp</th>
+                                </tr>
+                            </thead>
+                            <tbody id="orderbook-body">
+                                <tr>
+                                    <td colspan="9" class="text-center text-base-content/60">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Tradebook Tab -->
+                <div id="tradebook-tab" class="strategy-tab hidden">
+                    <div class="overflow-x-auto">
+                        <table class="table table-compact">
+                            <thead>
+                                <tr>
+                                    <th>Order ID</th>
+                                    <th>Symbol</th>
+                                    <th>Exchange</th>
+                                    <th>Product</th>
+                                    <th>Action</th>
+                                    <th>Avg Price</th>
+                                    <th>Trade Value</th>
+                                    <th>Timestamp</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tradebook-body">
+                                <tr>
+                                    <td colspan="10" class="text-center text-base-content/60">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="stats shadow mt-4">
+                        <div class="stat">
+                            <div class="stat-title">Total P&L</div>
+                            <div class="stat-value text-primary" id="total-pnl">₹0.00</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Positions Tab -->
+                <div id="positions-tab" class="strategy-tab hidden">
+                    <div class="overflow-x-auto">
+                        <table class="table table-compact">
+                            <thead>
+                                <tr>
+                                    <th>Symbol</th>
+                                    <th>Exchange</th>
+                                    <th>Product</th>
+                                    <th>Action</th>
+                                    <th>Qty</th>
+                                    <th>Avg Price</th>
+                                    <th>LTP</th>
+                                    <th>P&L</th>
+                                </tr>
+                            </thead>
+                            <tbody id="positions-body">
+                                <tr>
+                                    <td colspan="9" class="text-center text-base-content/60">Loading...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="stats shadow mt-4">
+                        <div class="stat">
+                            <div class="stat-title">Total Unrealized P&L</div>
+                            <div class="stat-value" id="total-unrealized-pnl">₹0.00</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Action Buttons -->
         <div class="flex justify-end gap-3">
             <button type="button" onclick="saveAsTemplate()" class="btn btn-ghost">Save as Template</button>
@@ -265,8 +388,6 @@
                 <select class="select select-bordered select-sm leg-order-type" onchange="togglePriceFields(this)">
                     <option value="MARKET">MARKET</option>
                     <option value="LIMIT">LIMIT</option>
-                    <option value="SL-MKT">SL-MKT</option>
-                    <option value="SL-LMT">SL-LMT</option>
                 </select>
             </div>
 
@@ -283,10 +404,6 @@
                 <input type="number" class="input input-bordered input-sm leg-limit-price" placeholder="0.00" step="0.05">
             </div>
 
-            <div class="form-control trigger-price-field" style="display:none;">
-                <label class="label"><span class="label-text text-xs">Trigger Price</span></label>
-                <input type="number" class="input input-bordered input-sm leg-trigger-price" placeholder="0.00" step="0.05">
-            </div>
 
             <!-- Row 4: SL%, TP% -->
             <div class="form-control">
@@ -391,22 +508,15 @@ function togglePriceFields(selectElement) {
     const orderType = selectElement.value;
     const priceConditionField = legItem.querySelector('.price-condition-field');
     const limitPriceField = legItem.querySelector('.limit-price-field');
-    const triggerPriceField = legItem.querySelector('.trigger-price-field');
 
     // Hide all by default
     if (priceConditionField) priceConditionField.style.display = 'none';
     if (limitPriceField) limitPriceField.style.display = 'none';
-    if (triggerPriceField) triggerPriceField.style.display = 'none';
 
     // Show relevant fields based on order type
     if (orderType === 'LIMIT') {
         if (priceConditionField) priceConditionField.style.display = 'block';
         if (limitPriceField) limitPriceField.style.display = 'block';
-    } else if (orderType === 'SL-MKT') {
-        if (triggerPriceField) triggerPriceField.style.display = 'block';
-    } else if (orderType === 'SL-LMT') {
-        if (limitPriceField) limitPriceField.style.display = 'block';
-        if (triggerPriceField) triggerPriceField.style.display = 'block';
     }
 }
 
@@ -461,7 +571,6 @@ function saveStrategy(execute = false) {
         const orderType = legItem.querySelector('.leg-order-type').value;
         const priceCondition = legItem.querySelector('.leg-price-condition')?.value;
         const limitPrice = legItem.querySelector('.leg-limit-price')?.value;
-        const triggerPrice = legItem.querySelector('.leg-trigger-price')?.value;
         const lots = parseInt(legItem.querySelector('.leg-lots').value) || 1;
 
         // Calculate quantity based on instrument and lots
@@ -486,7 +595,7 @@ function saveStrategy(execute = false) {
             order_type: orderType,
             price_condition: orderType === 'LIMIT' ? priceCondition : null,
             limit_price: limitPrice ? parseFloat(limitPrice) : null,
-            trigger_price: triggerPrice ? parseFloat(triggerPrice) : null,
+            trigger_price: null,
             stop_loss_type: 'percentage',
             stop_loss_value: parseFloat(legItem.querySelector('.leg-sl').value) || null,
             take_profit_type: 'percentage',
@@ -535,9 +644,23 @@ function saveStrategy(execute = false) {
                 })
                 .then(response => response.json())
                 .then(execData => {
+                    // Handle different execution statuses
                     if (execData.status === 'success') {
-                        showNotification('Strategy executed successfully', 'success');
+                        showNotification(execData.message || 'Strategy executed successfully', 'success');
                         setTimeout(() => window.location.href = '/strategy', 2000);
+                    } else if (execData.status === 'warning') {
+                        // Orders were skipped due to insufficient margin
+                        showNotification(execData.message || 'Strategy execution skipped', 'warning');
+                        // Show details if available
+                        if (execData.results && execData.results.length > 0) {
+                            console.log('Execution details:', execData.results);
+                        }
+                    } else if (execData.status === 'partial') {
+                        // Some orders succeeded, some failed/skipped
+                        showNotification(execData.message || 'Strategy partially executed', 'warning');
+                    } else {
+                        // Error status
+                        showNotification(execData.message || 'Strategy execution failed', 'error');
                     }
                 });
             } else {
@@ -563,13 +686,24 @@ function saveAsTemplate() {
 function showNotification(message, type) {
     const toast = document.createElement('div');
     toast.className = `toast toast-end`;
+
+    // Map type to appropriate alert class
+    let alertClass = 'alert-info';
+    if (type === 'success') {
+        alertClass = 'alert-success';
+    } else if (type === 'error') {
+        alertClass = 'alert-error';
+    } else if (type === 'warning') {
+        alertClass = 'alert-warning';
+    }
+
     toast.innerHTML = `
-        <div class="alert alert-${type === 'success' ? 'success' : 'error'}">
+        <div class="alert ${alertClass}">
             <span>${message}</span>
         </div>
     `;
     document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
+    setTimeout(() => toast.remove(), 5000);  // Show for 5 seconds for important messages
 }
 
 // Initialize with existing data or add first leg
@@ -645,14 +779,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             {% if leg.limit_price %}
             legItem.querySelector('.leg-limit-price').value = {{ leg.limit_price }};
             {% endif %}
-            {% elif leg.order_type in ['SL-MKT', 'SL-LMT'] %}
-            togglePriceFields(legItem.querySelector('.leg-order-type'));
-            {% if leg.trigger_price %}
-            legItem.querySelector('.leg-trigger-price').value = {{ leg.trigger_price }};
-            {% endif %}
-            {% if leg.order_type == 'SL-LMT' and leg.limit_price %}
-            legItem.querySelector('.leg-limit-price').value = {{ leg.limit_price }};
-            {% endif %}
             {% endif %}
 
             // Populate stop loss and take profit
@@ -672,6 +798,251 @@ document.addEventListener('DOMContentLoaded', async function() {
     {% else %}
         // Add first leg by default
         addLeg();
+    {% endif %}
+
+    // Load strategy execution data if editing existing strategy
+    {% if strategy %}
+    loadStrategyData();
+    {% endif %}
+});
+
+// Strategy-level execution tracking functions
+function showStrategyTab(tabName, element) {
+    // Hide all tabs
+    document.querySelectorAll('.strategy-tab').forEach(tab => {
+        tab.classList.add('hidden');
+    });
+
+    // Remove active from all tab buttons
+    document.querySelectorAll('.tabs .tab').forEach(tab => {
+        tab.classList.remove('tab-active');
+    });
+
+    // Show selected tab
+    document.getElementById(tabName + '-tab').classList.remove('hidden');
+    element.classList.add('tab-active');
+}
+
+function loadStrategyData() {
+    {% if strategy %}
+    const strategyId = {{ strategy.id }};
+
+    // Load orderbook
+    loadOrderbook(strategyId);
+
+    // Load tradebook
+    loadTradebook(strategyId);
+
+    // Load positions
+    loadPositions(strategyId);
+    {% endif %}
+}
+
+function refreshStrategyData() {
+    loadStrategyData();
+    showToast('Data refreshed', 'success');
+}
+
+async function loadOrderbook(strategyId) {
+    try {
+        const response = await fetch(`/strategy/${strategyId}/orderbook`);
+        const data = await response.json();
+
+        if (data.status === 'success' && data.data) {
+            const tbody = document.getElementById('orderbook-body');
+            tbody.innerHTML = '';
+
+            const orders = data.data.orders || [];
+            const stats = data.data.statistics || {};
+
+            if (orders.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/60">No orders found</td></tr>';
+            } else {
+                orders.forEach(order => {
+                    const row = tbody.insertRow();
+                    const statusColor = order.order_status === 'complete' ? 'badge-success' :
+                                      order.order_status === 'rejected' ? 'badge-error' :
+                                      order.order_status === 'open' ? 'badge-warning' : 'badge-outline';
+                    row.innerHTML = `
+                        <td class="text-xs">${order.orderid || '-'}</td>
+                        <td>${order.symbol}</td>
+                        <td>${order.exchange}</td>
+                        <td>${order.product}</td>
+                        <td><span class="badge ${order.action === 'BUY' ? 'badge-success' : 'badge-error'} badge-sm">${order.action}</span></td>
+                        <td>${order.quantity}</td>
+                        <td>₹${order.price || 0}</td>
+                        <td><span class="badge ${statusColor} badge-sm">${order.order_status}</span></td>
+                        <td class="text-xs">${order.timestamp || '-'}</td>
+                    `;
+                });
+            }
+
+            // Update statistics if available
+            if (stats.total_buy_orders !== undefined) {
+                const statsDiv = document.getElementById('order-stats');
+                if (statsDiv) {
+                    statsDiv.innerHTML = `
+                        <div class="stats shadow">
+                            <div class="stat py-2">
+                                <div class="stat-title text-xs">Buy Orders</div>
+                                <div class="stat-value text-sm">${stats.total_buy_orders}</div>
+                            </div>
+                            <div class="stat py-2">
+                                <div class="stat-title text-xs">Sell Orders</div>
+                                <div class="stat-value text-sm">${stats.total_sell_orders}</div>
+                            </div>
+                            <div class="stat py-2">
+                                <div class="stat-title text-xs">Completed</div>
+                                <div class="stat-value text-sm text-success">${stats.total_completed_orders}</div>
+                            </div>
+                            <div class="stat py-2">
+                                <div class="stat-title text-xs">Open</div>
+                                <div class="stat-value text-sm text-warning">${stats.total_open_orders}</div>
+                            </div>
+                            <div class="stat py-2">
+                                <div class="stat-title text-xs">Rejected</div>
+                                <div class="stat-value text-sm text-error">${stats.total_rejected_orders}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading orderbook:', error);
+    }
+}
+
+async function loadTradebook(strategyId) {
+    try {
+        const response = await fetch(`/strategy/${strategyId}/tradebook`);
+        const data = await response.json();
+
+        if (data.status === 'success' && data.data) {
+            const tbody = document.getElementById('tradebook-body');
+            tbody.innerHTML = '';
+
+            const trades = data.data || [];
+
+            if (trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center text-base-content/60">No trades found</td></tr>';
+            } else {
+                let totalTradeValue = 0;
+                trades.forEach(trade => {
+                    totalTradeValue += trade.trade_value || 0;
+                    const row = tbody.insertRow();
+                    row.innerHTML = `
+                        <td class="text-xs">${trade.orderid || '-'}</td>
+                        <td>${trade.symbol}</td>
+                        <td>${trade.exchange}</td>
+                        <td>${trade.product}</td>
+                        <td><span class="badge ${trade.action === 'BUY' ? 'badge-success' : 'badge-error'} badge-sm">${trade.action}</span></td>
+                        <td>₹${trade.average_price || 0}</td>
+                        <td>₹${trade.trade_value ? trade.trade_value.toFixed(2) : '0.00'}</td>
+                        <td class="text-xs">${trade.timestamp || '-'}</td>
+                    `;
+                });
+
+                // Update total trade value
+                const totalValueEl = document.getElementById('total-trade-value');
+                if (totalValueEl) {
+                    totalValueEl.textContent = `₹${totalTradeValue.toFixed(2)}`;
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading tradebook:', error);
+    }
+}
+
+async function loadPositions(strategyId) {
+    try {
+        const response = await fetch(`/strategy/${strategyId}/positions`);
+        const data = await response.json();
+
+        if (data.status === 'success' && data.data) {
+            const tbody = document.getElementById('positions-body');
+            tbody.innerHTML = '';
+
+            const positions = data.data || [];
+
+            if (positions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-base-content/60">No open positions</td></tr>';
+            } else {
+                let totalPnl = 0;
+                positions.forEach(position => {
+                    const pnl = parseFloat(position.pnl) || 0;
+                    totalPnl += pnl;
+                    const row = tbody.insertRow();
+                    const qty = parseInt(position.quantity) || 0;
+                    const action = qty < 0 ? 'SELL' : 'BUY';
+                    row.innerHTML = `
+                        <td>${position.symbol}</td>
+                        <td>${position.exchange}</td>
+                        <td>${position.product}</td>
+                        <td><span class="badge ${action === 'BUY' ? 'badge-success' : 'badge-error'} badge-sm">${action}</span></td>
+                        <td>${Math.abs(qty)}</td>
+                        <td>₹${position.average_price || 0}</td>
+                        <td>₹${position.ltp || 0}</td>
+                        <td class="${pnl >= 0 ? 'text-success' : 'text-error'}">₹${pnl.toFixed(2)}</td>
+                    `;
+                });
+
+                // Update total P&L
+                const totalElement = document.getElementById('total-unrealized-pnl');
+                if (totalElement) {
+                    totalElement.textContent = `₹${totalPnl.toFixed(2)}`;
+                    totalElement.className = totalPnl >= 0 ? 'stat-value text-success' : 'stat-value text-error';
+                }
+            }
+        }
+    } catch (error) {
+        console.error('Error loading positions:', error);
+    }
+}
+
+async function closeAllPositions() {
+    {% if strategy %}
+    if (!confirm('Are you sure you want to close all open positions for this strategy?')) {
+        return;
+    }
+
+    try {
+        const strategyId = {{ strategy.id }};
+        const response = await fetch(`/strategy/${strategyId}/close-all`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            showToast(data.message + ` Total P&L: ₹${data.total_pnl.toFixed(2)}`, 'success');
+            // Reload the data
+            loadStrategyData();
+        } else {
+            showToast(data.message || 'Failed to close positions', 'error');
+        }
+    } catch (error) {
+        console.error('Error closing positions:', error);
+        showToast('Error closing positions', 'error');
+    }
+    {% endif %}
+}
+
+// Auto-refresh data every 10 seconds when on positions tab
+let refreshInterval;
+document.addEventListener('DOMContentLoaded', function() {
+    {% if strategy %}
+    refreshInterval = setInterval(function() {
+        const positionsTab = document.getElementById('positions-tab');
+        if (!positionsTab.classList.contains('hidden')) {
+            loadPositions({{ strategy.id }});
+        }
+    }, 10000);
     {% endif %}
 });
 </script>
