@@ -247,7 +247,7 @@ class StrategyExecutor:
                         status='entered',
                         broker_order_status=order_status_data.get('order_status', 'pending') if order_status_data else 'pending',
                         entry_time=datetime.utcnow(),
-                        entry_price=order_status_data.get('price', 0) if order_status_data else None
+                        entry_price=order_status_data.get('average_price') if order_status_data else None
                     )
 
                     with self.lock:
@@ -260,12 +260,12 @@ class StrategyExecutor:
                             'order_id': order_id,
                             'status': 'success',
                             'order_status': order_status_data.get('order_status', 'pending') if order_status_data else 'pending',
-                            'executed_price': order_status_data.get('price', 0) if order_status_data else 0,
+                            'executed_price': order_status_data.get('average_price', 0) if order_status_data else 0,
                             'leg': leg.leg_number
                         })
 
-                    # Start monitoring for exits (pass execution ID)
-                    self._start_exit_monitoring_async(execution.id)
+                    # Start monitoring for exits with WebSocket and background thread
+                    self._start_exit_monitoring(execution)
 
             else:
                 with self.lock:
@@ -815,10 +815,10 @@ class StrategyExecutor:
         # Subscribe to WebSocket for real-time price updates
         self._subscribe_to_websocket(execution.symbol, execution.exchange)
 
-        # Start monitoring thread
+        # Start monitoring thread - pass execution ID to avoid session issues
         thread = threading.Thread(
             target=self._monitor_exit_conditions,
-            args=(execution,),
+            args=(execution.id,),
             daemon=True
         )
         thread.start()
@@ -867,7 +867,7 @@ class StrategyExecutor:
                         logger.debug(f"Price update for {symbol}: {data.get('ltp')}")
 
                 self.websocket_manager.data_processor.register_depth_handler(on_depth_update)
-                self.websocket_manager.subscribe_depth(instruments)
+                self.websocket_manager.subscribe_batch(instruments, mode='ltp')
 
                 logger.info(f"Subscribed to WebSocket for {symbol}")
                 self.price_subscriptions[symbol] = True
@@ -884,119 +884,143 @@ class StrategyExecutor:
                 return underlying
         return None
 
-    def _monitor_exit_conditions(self, execution: StrategyExecution):
+    def _monitor_exit_conditions(self, execution_id: int):
         """Monitor position for exit conditions using real-time WebSocket data"""
         import time as time_module
+        from app import create_app
 
-        leg = execution.leg
-        account = execution.account
-        symbol = execution.symbol
+        # Create new app context for this thread
+        app = create_app()
+        with app.app_context():
+            # Query execution fresh in this thread's context
+            execution = StrategyExecution.query.get(execution_id)
+            if not execution:
+                logger.error(f"[MONITOR] Execution {execution_id} not found")
+                return
 
-        try:
-            client = ExtendedOpenAlgoAPI(
-                api_key=account.get_api_key(),
-                host=account.host_url
-            )
+            logger.info(f"[MONITOR_START] Starting monitoring for execution ID={execution.id}, symbol={execution.symbol}")
 
-            # Track entry price if not set
-            if not execution.entry_price:
-                # Get order details to fetch entry price
-                order_response = client.orderstatus(
-                    order_id=execution.order_id,
-                    strategy=f"Strategy_{self.strategy.id}"
-                )
-                if order_response.get('status') == 'success':
-                    execution.entry_price = order_response.get('data', {}).get('price')
-                    db.session.commit()
+            leg = execution.leg
+            account = execution.account
+            symbol = execution.symbol
 
-            while execution.status == 'entered':
-                # First check position status
-                position_response = client.openposition(
-                    strategy=f"Strategy_{self.strategy.id}",
-                    symbol=execution.symbol,
-                    exchange=execution.exchange,
-                    product='MIS'
+            try:
+                client = ExtendedOpenAlgoAPI(
+                    api_key=account.get_api_key(),
+                    host=account.host_url
                 )
 
-                if position_response.get('status') == 'success':
-                    current_qty = int(position_response.get('quantity', 0))
-
-                    if current_qty == 0:
-                        # Position already exited
-                        execution.status = 'exited'
-                        execution.exit_time = datetime.utcnow()
+                # Track entry price if not set
+                if not execution.entry_price:
+                    # Get order details to fetch entry price
+                    order_response = client.orderstatus(
+                        order_id=execution.order_id,
+                        strategy=f"Strategy_{self.strategy.id}"
+                    )
+                    if order_response.get('status') == 'success':
+                        execution.entry_price = order_response.get('data', {}).get('average_price')
                         db.session.commit()
-                        break
+                        logger.info(f"[MONITOR] Fetched entry price: {execution.entry_price} for {symbol}")
 
-                # Get current price - prefer WebSocket data, fallback to REST
-                ltp = None
-                price_data = None
+                logger.info(f"[MONITOR_LOOP] Entry price={execution.entry_price}, Status={execution.status}")
 
-                # Check if we have recent WebSocket data (within last 2 seconds)
-                if symbol in self.latest_prices:
-                    price_info = self.latest_prices[symbol]
-                    if price_info['timestamp'] and (datetime.utcnow() - price_info['timestamp']).seconds < 2:
-                        # Use WebSocket data
-                        ltp = price_info['ltp']
-                        price_data = price_info
-                        logger.debug(f"Using WebSocket price for {symbol}: {ltp}")
-
-                # Fallback to REST API if no recent WebSocket data
-                if not ltp:
-                    quote_response = client.quotes(
+                while execution.status == 'entered':
+                    logger.info(f"[MONITOR_TICK] Monitoring tick for {symbol}")
+                    # First check position status
+                    position_response = client.openposition(
+                        strategy=f"Strategy_{self.strategy.id}",
                         symbol=execution.symbol,
-                        exchange=execution.exchange
+                        exchange=execution.exchange,
+                        product='MIS'
                     )
 
-                    if quote_response.get('status') == 'success':
-                        data = quote_response.get('data', {})
-                        ltp = data.get('ltp')
-                        price_data = {
-                            'ltp': ltp,
-                            'bid': data.get('bid'),
-                            'ask': data.get('ask')
-                        }
-                        logger.debug(f"Using REST API price for {symbol}: {ltp}")
+                    if position_response.get('status') == 'success':
+                        current_qty = int(position_response.get('quantity', 0))
 
-                if ltp and execution.entry_price:
-                    # Calculate P&L based on action
-                    if execution.leg.action == 'BUY':
-                        pnl = (ltp - execution.entry_price) * execution.quantity
-                    else:  # SELL
-                        pnl = (execution.entry_price - ltp) * execution.quantity
+                        if current_qty == 0:
+                            # Position already exited
+                            execution.status = 'exited'
+                            execution.exit_time = datetime.utcnow()
+                            db.session.commit()
+                            break
 
-                    execution.unrealized_pnl = pnl
-                    db.session.commit()
+                    # Get current price - prefer WebSocket data, fallback to REST
+                    ltp = None
+                    price_data = None
 
-                    # Log P&L periodically for monitoring
-                    if int(time_module.time()) % 30 == 0:  # Every 30 seconds
-                        logger.info(f"Position {symbol}: Entry={execution.entry_price}, LTP={ltp}, P&L={pnl:.2f}")
+                    # Check if we have recent WebSocket data (within last 2 seconds)
+                    if symbol in self.latest_prices:
+                        price_info = self.latest_prices[symbol]
+                        if price_info['timestamp'] and (datetime.utcnow() - price_info['timestamp']).seconds < 2:
+                            # Use WebSocket data
+                            ltp = price_info['ltp']
+                            price_data = price_info
+                            logger.info(f"[MONITOR_WS] Using WebSocket price for {symbol}: {ltp}")
+                    else:
+                        logger.info(f"[MONITOR_WS] No WebSocket data for {symbol}, falling back to REST")
 
-                    # Check exit conditions with live price
-                    if self._should_exit(execution, ltp, pnl):
-                        self._exit_position(execution, client)
-                        break
+                    # Fallback to REST API if no recent WebSocket data
+                    if not ltp:
+                        logger.info(f"[MONITOR_REST] Fetching quote for {symbol}")
+                        quote_response = client.quotes(
+                            symbol=execution.symbol,
+                            exchange=execution.exchange
+                        )
 
-                    # Check for trailing stop loss
-                    if leg.enable_trailing and leg.trailing_value:
-                        self._update_trailing_stop(execution, ltp, pnl)
+                        if quote_response.get('status') == 'success':
+                            data = quote_response.get('data', {})
+                            ltp = data.get('ltp')
+                            price_data = {
+                                'ltp': ltp,
+                                'bid': data.get('bid'),
+                                'ask': data.get('ask')
+                            }
+                            logger.info(f"[MONITOR_REST] Got price for {symbol}: {ltp}")
+                        else:
+                            logger.info(f"[MONITOR_REST] Failed to get quote: {quote_response}")
 
-                # Check square off time
-                if self.strategy.square_off_time:
-                    current_time = datetime.now().time()
-                    if current_time >= self.strategy.square_off_time:
-                        logger.info(f"Square off time reached for {symbol}")
-                        self._exit_position(execution, client, reason='square_off')
-                        break
+                    if not ltp:
+                        logger.info(f"[MONITOR_NOLTP] No LTP available for {symbol}, skipping P&L check")
 
-                # Sleep briefly - WebSocket provides continuous updates
-                time_module.sleep(1)  # Reduced from 5 to 1 second since we have live data
+                    if ltp and execution.entry_price:
+                        # Calculate P&L based on action
+                        if execution.leg.action == 'BUY':
+                            pnl = (ltp - execution.entry_price) * execution.quantity
+                        else:  # SELL
+                            pnl = (execution.entry_price - ltp) * execution.quantity
 
-        except Exception as e:
-            logger.error(f"Error monitoring exit conditions for {symbol}: {e}")
-            execution.status = 'error'
-            execution.error_message = str(e)
-            db.session.commit()
+                        execution.unrealized_pnl = pnl
+                        db.session.commit()
+
+                        # Log P&L periodically for monitoring
+                        if int(time_module.time()) % 30 == 0:  # Every 30 seconds
+                            logger.info(f"Position {symbol}: Entry={execution.entry_price}, LTP={ltp}, P&L={pnl:.2f}")
+
+                        # Check exit conditions with live price
+                        if self._should_exit(execution, ltp, pnl):
+                            self._exit_position(execution, client)
+                            break
+
+                        # Check for trailing stop loss
+                        if leg.enable_trailing and leg.trailing_value:
+                            self._update_trailing_stop(execution, ltp, pnl)
+
+                    # Check square off time
+                    if self.strategy.square_off_time:
+                        current_time = datetime.now().time()
+                        if current_time >= self.strategy.square_off_time:
+                            logger.info(f"Square off time reached for {symbol}")
+                            self._exit_position(execution, client, reason='square_off')
+                            break
+
+                    # Sleep briefly - WebSocket provides continuous updates
+                    time_module.sleep(1)  # Reduced from 5 to 1 second since we have live data
+
+            except Exception as e:
+                logger.error(f"Error monitoring exit conditions for {symbol}: {e}")
+                execution.status = 'error'
+                execution.error_message = str(e)
+                db.session.commit()
 
     def _update_trailing_stop(self, execution: StrategyExecution, ltp: float, current_pnl: float):
         """Update trailing stop loss based on favorable price movement"""
