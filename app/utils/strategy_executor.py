@@ -259,12 +259,35 @@ class StrategyExecutor:
             if response.get('status') == 'success':
                 order_id = response.get('orderid')
 
-                # Wait a moment for order to be processed
+                # Wait for order to be processed by broker and fetch status
+                # Retry multiple times as broker may take time to update status
                 import time
-                time.sleep(1)
+                order_status_data = None
+                max_status_checks = 3
 
-                # Fetch actual order status
-                order_status_data = self._get_order_status(client, order_id, self.strategy.name)
+                for attempt in range(max_status_checks):
+                    # Wait before checking (2 seconds first attempt, 1 second for retries)
+                    wait_time = 2 if attempt == 0 else 1
+                    time.sleep(wait_time)
+
+                    # Fetch actual order status
+                    order_status_data = self._get_order_status(client, order_id, self.strategy.name)
+
+                    if order_status_data:
+                        broker_status = order_status_data.get('order_status', 'open')
+
+                        # If status is final (complete/rejected/cancelled), stop checking
+                        if broker_status in ['complete', 'rejected', 'cancelled']:
+                            logger.info(f"Order {order_id} final status: {broker_status} (attempt {attempt + 1}/{max_status_checks})")
+                            break
+
+                        # If still 'open', retry (unless last attempt)
+                        if broker_status == 'open' and attempt < max_status_checks - 1:
+                            logger.info(f"Order {order_id} still open, will retry status check (attempt {attempt + 1}/{max_status_checks})")
+                            continue
+
+                    # If no data or final attempt, use what we have
+                    break
 
                 # Determine execution status based on broker order status
                 # OpenAlgo valid statuses: 'complete', 'open', 'rejected', 'cancelled'
