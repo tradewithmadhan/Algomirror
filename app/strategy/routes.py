@@ -568,15 +568,16 @@ def modify_leg_orders(strategy_id, leg_id):
                 )
 
                 # Modify the order using OpenAlgo API
+                # Use execution fields (actual placed order details) not leg fields
                 response = client.modifyorder(
                     order_id=execution.order_id,
                     strategy=strategy.name,
-                    symbol=leg.symbol,
+                    symbol=execution.symbol,
                     action=leg.action,
-                    exchange=leg.exchange,
+                    exchange=execution.exchange,
                     price_type='LIMIT',
-                    product=leg.product,
-                    quantity=leg.quantity,
+                    product=strategy.product_order_type,  # MIS/CNC from strategy
+                    quantity=execution.quantity,
                     price=new_price
                 )
 

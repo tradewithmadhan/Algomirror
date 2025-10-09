@@ -730,7 +730,7 @@ async function cancelLegOrder(button) {
     }
 }
 
-// Modify limit price for pending order
+// Modify limit price for pending order (inline - no modal)
 async function modifyLegPrice(button) {
     const legItem = button.closest('.leg-item');
     const legNumber = legItem.querySelector('.leg-number').textContent;
@@ -739,10 +739,6 @@ async function modifyLegPrice(button) {
 
     if (!newPrice || parseFloat(newPrice) <= 0) {
         showNotification('Please enter a valid price', 'error');
-        return;
-    }
-
-    if (!confirm(`Modify pending order for Leg ${legNumber} to ₹${newPrice}?`)) {
         return;
     }
 
@@ -774,8 +770,8 @@ async function modifyLegPrice(button) {
         const data = await response.json();
 
         if (data.status === 'success' || data.status === 'partial') {
-            showNotification(data.message || 'Order price modified successfully', 'success');
-            // Reload strategy data
+            showNotification(data.message || 'Order price modified to ₹' + newPrice, 'success');
+            // Reload strategy data to refresh orderbook
             loadStrategyData();
         } else {
             showNotification(data.message || 'Failed to modify order price', 'error');

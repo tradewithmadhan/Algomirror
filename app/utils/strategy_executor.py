@@ -264,31 +264,38 @@ class StrategyExecutor:
                 broker_order_status = order_status_data.get('order_status') if order_status_data else None
                 entry_price = order_status_data.get('average_price', 0) if order_status_data else 0
 
-                # Handle None order_status - use default 'open'
-                if broker_order_status is None:
-                    broker_order_status = 'open'
-
-                # If we have an entry price > 0, order is definitely filled (override broker status)
-                if entry_price and entry_price > 0:
+                # Map broker status to execution status
+                # IMPORTANT: Check broker_order_status FIRST before using price
+                # For LIMIT orders, average_price may contain limit price even when not filled
+                if broker_order_status == 'complete':
+                    # Explicitly completed by broker
                     execution_status = 'entered'
-                    broker_order_status = 'complete'
-                    logger.info(f"Order {order_id} filled at {entry_price} for {symbol} on {account_name}")
-                # Map OpenAlgo broker status to our internal execution status
+                    logger.info(f"Order {order_id} completed successfully for {symbol} on {account_name}")
                 elif broker_order_status in ['rejected', 'cancelled']:
                     # Rejected/cancelled orders are marked as failed
                     execution_status = 'failed'
                     logger.warning(f"Order {order_id} was {broker_order_status} by broker for {symbol} on {account_name}")
-                elif broker_order_status == 'complete':
-                    # Completed orders are marked as entered (position opened)
-                    execution_status = 'entered'
-                    logger.info(f"Order {order_id} completed successfully for {symbol} on {account_name}")
                 elif broker_order_status == 'open':
-                    # Open orders (not yet filled) are marked as pending
+                    # Explicitly open (pending fill)
                     execution_status = 'pending'
                     logger.info(f"Order {order_id} is open (pending fill) for {symbol} on {account_name}")
+                elif broker_order_status is None:
+                    # Broker didn't provide status - use price as fallback
+                    # Only mark as filled if we have a valid average price AND it's a MARKET order
+                    # For LIMIT orders, average_price might be the limit price, not execution price
+                    if entry_price and entry_price > 0 and order_params.get('price_type') == 'MARKET':
+                        execution_status = 'entered'
+                        broker_order_status = 'complete'
+                        logger.info(f"Order {order_id} assumed filled at {entry_price} for {symbol} on {account_name} (broker status unknown)")
+                    else:
+                        # Conservative: mark as pending if broker status unknown
+                        execution_status = 'pending'
+                        broker_order_status = 'open'
+                        logger.warning(f"Order {order_id} status unknown, marking as pending for {symbol} on {account_name}")
                 else:
                     # Unknown status - mark as pending with warning
                     execution_status = 'pending'
+                    broker_order_status = 'open'
                     logger.warning(f"Unknown broker order status '{broker_order_status}' for order {order_id}, defaulting to pending")
 
                 # Create execution record with app context for thread safety
