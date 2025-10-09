@@ -925,7 +925,7 @@ class StrategyExecutor:
                 logger.info(f"[MONITOR_LOOP] Entry price={execution.entry_price}, Status={execution.status}")
 
                 while execution.status == 'entered':
-                    logger.info(f"[MONITOR_TICK] Monitoring tick for {symbol}")
+                    logger.debug(f"[MONITOR_TICK] Monitoring tick for {symbol}")
                     # First check position status
                     position_response = client.openposition(
                         strategy=f"Strategy_{self.strategy.id}",
@@ -957,11 +957,11 @@ class StrategyExecutor:
                             price_data = price_info
                             logger.info(f"[MONITOR_WS] Using WebSocket price for {symbol}: {ltp}")
                     else:
-                        logger.info(f"[MONITOR_WS] No WebSocket data for {symbol}, falling back to REST")
+                        logger.debug(f"[MONITOR_WS] No WebSocket data for {symbol}, falling back to REST")
 
                     # Fallback to REST API if no recent WebSocket data
                     if not ltp:
-                        logger.info(f"[MONITOR_REST] Fetching quote for {symbol}")
+                        logger.debug(f"[MONITOR_REST] Fetching quote for {symbol}")
                         quote_response = client.quotes(
                             symbol=execution.symbol,
                             exchange=execution.exchange
@@ -975,12 +975,12 @@ class StrategyExecutor:
                                 'bid': data.get('bid'),
                                 'ask': data.get('ask')
                             }
-                            logger.info(f"[MONITOR_REST] Got price for {symbol}: {ltp}")
+                            logger.debug(f"[MONITOR_REST] Got price for {symbol}: {ltp}")
                         else:
-                            logger.info(f"[MONITOR_REST] Failed to get quote: {quote_response}")
+                            logger.debug(f"[MONITOR_REST] Failed to get quote: {quote_response}")
 
                     if not ltp:
-                        logger.info(f"[MONITOR_NOLTP] No LTP available for {symbol}, skipping P&L check")
+                        logger.debug(f"[MONITOR_NOLTP] No LTP available for {symbol}, skipping P&L check")
 
                     if ltp and execution.entry_price:
                         # Calculate P&L based on action
@@ -1046,19 +1046,19 @@ class StrategyExecutor:
         """Check if position should be exited"""
         leg = execution.leg
 
-        logger.info(f"[EXIT_CHECK] Symbol={execution.symbol}, Entry={execution.entry_price}, LTP={ltp}, P&L={pnl:.2f}")
+        logger.debug(f"[EXIT_CHECK] Symbol={execution.symbol}, Entry={execution.entry_price}, LTP={ltp}, P&L={pnl:.2f}")
 
         # Check stop loss
         if leg.stop_loss_value:
             if leg.stop_loss_type == 'points':
-                logger.info(f"[EXIT_CHECK] SL Type=points, SL Value={leg.stop_loss_value}, abs(P&L)={abs(pnl):.2f}")
+                logger.debug(f"[EXIT_CHECK] SL Type=points, SL Value={leg.stop_loss_value}, abs(P&L)={abs(pnl):.2f}")
                 if abs(pnl) >= leg.stop_loss_value:
                     logger.info(f"[EXIT_TRIGGER] Stop loss hit! P&L={pnl:.2f} >= SL={leg.stop_loss_value}")
                     return True
             elif leg.stop_loss_type == 'percentage':
                 entry_value = execution.entry_price * execution.quantity
                 sl_threshold = entry_value * leg.stop_loss_value / 100
-                logger.info(f"[EXIT_CHECK] SL Type=percentage, SL%={leg.stop_loss_value}, Threshold={sl_threshold:.2f}, abs(P&L)={abs(pnl):.2f}")
+                logger.debug(f"[EXIT_CHECK] SL Type=percentage, SL%={leg.stop_loss_value}, Threshold={sl_threshold:.2f}, abs(P&L)={abs(pnl):.2f}")
                 if abs(pnl) >= sl_threshold:
                     logger.info(f"[EXIT_TRIGGER] Stop loss hit! abs(P&L)={abs(pnl):.2f} >= Threshold={sl_threshold:.2f}")
                     return True
@@ -1066,14 +1066,14 @@ class StrategyExecutor:
         # Check take profit
         if leg.take_profit_value:
             if leg.take_profit_type == 'points':
-                logger.info(f"[EXIT_CHECK] TP Type=points, TP Value={leg.take_profit_value}, P&L={pnl:.2f}")
+                logger.debug(f"[EXIT_CHECK] TP Type=points, TP Value={leg.take_profit_value}, P&L={pnl:.2f}")
                 if pnl >= leg.take_profit_value:
                     logger.info(f"[EXIT_TRIGGER] Take profit hit! P&L={pnl:.2f} >= TP={leg.take_profit_value}")
                     return True
             elif leg.take_profit_type == 'percentage':
                 entry_value = execution.entry_price * execution.quantity
                 tp_threshold = entry_value * leg.take_profit_value / 100
-                logger.info(f"[EXIT_CHECK] TP Type=percentage, TP%={leg.take_profit_value}, Threshold={tp_threshold:.2f}, P&L={pnl:.2f}")
+                logger.debug(f"[EXIT_CHECK] TP Type=percentage, TP%={leg.take_profit_value}, Threshold={tp_threshold:.2f}, P&L={pnl:.2f}")
                 if pnl >= tp_threshold:
                     logger.info(f"[EXIT_TRIGGER] Take profit hit! P&L={pnl:.2f} >= Threshold={tp_threshold:.2f}")
                     return True
@@ -1081,19 +1081,19 @@ class StrategyExecutor:
         # Check max loss/profit at strategy level
         if self.strategy.max_loss:
             total_pnl = self._get_strategy_pnl()
-            logger.info(f"[EXIT_CHECK] Strategy Max Loss={self.strategy.max_loss}, Total P&L={total_pnl:.2f}")
+            logger.debug(f"[EXIT_CHECK] Strategy Max Loss={self.strategy.max_loss}, Total P&L={total_pnl:.2f}")
             if abs(total_pnl) >= self.strategy.max_loss:
                 logger.info(f"[EXIT_TRIGGER] Strategy max loss hit! Total P&L={total_pnl:.2f}")
                 return True
 
         if self.strategy.max_profit:
             total_pnl = self._get_strategy_pnl()
-            logger.info(f"[EXIT_CHECK] Strategy Max Profit={self.strategy.max_profit}, Total P&L={total_pnl:.2f}")
+            logger.debug(f"[EXIT_CHECK] Strategy Max Profit={self.strategy.max_profit}, Total P&L={total_pnl:.2f}")
             if total_pnl >= self.strategy.max_profit:
                 logger.info(f"[EXIT_TRIGGER] Strategy max profit hit! Total P&L={total_pnl:.2f}")
                 return True
 
-        logger.info(f"[EXIT_CHECK] No exit conditions met")
+        logger.debug(f"[EXIT_CHECK] No exit conditions met")
         return False
 
     def _exit_position(self, execution: StrategyExecution, client: ExtendedOpenAlgoAPI,
