@@ -876,13 +876,15 @@ def strategy_orderbook(strategy_id):
         # If position was exited, add the exit order as a separate order
         if execution.status == 'exited' and execution.exit_price:
             exit_action = 'SELL' if execution.leg.action == 'BUY' else 'BUY'
+            # Use real exit order ID if available, otherwise fallback to generated ID
+            exit_orderid = execution.exit_order_id if execution.exit_order_id else f"STG_{execution.id}_EXIT"
             orders.append({
                 'account_name': execution.account.account_name if execution.account else 'N/A',
                 'broker_name': execution.account.broker_name if execution.account else 'N/A',
                 'action': exit_action,
                 'symbol': execution.symbol,
                 'exchange': execution.exchange,
-                'orderid': f"STG_{execution.id}_EXIT",
+                'orderid': exit_orderid,  # Use real order ID from OpenAlgo
                 'product': execution.leg.product_type.upper() if execution.leg.product_type else 'MIS',
                 'quantity': str(execution.quantity),
                 'price': execution.exit_price,
@@ -965,13 +967,15 @@ def strategy_tradebook(strategy_id):
         if trade.status == 'exited' and trade.exit_price:
             exit_action = 'SELL' if trade.leg.action == 'BUY' else 'BUY'
             exit_value = trade.exit_price * trade.quantity
+            # Use real exit order ID if available, otherwise fallback to generated ID
+            exit_orderid = trade.exit_order_id if trade.exit_order_id else f"STG_{trade.id}_EXIT"
             data.append({
                 'account_name': trade.account.account_name if trade.account else 'N/A',
                 'broker_name': trade.account.broker_name if trade.account else 'N/A',
                 'action': exit_action,
                 'symbol': trade.symbol,
                 'exchange': trade.exchange,
-                'orderid': f"STG_{trade.id}_EXIT",
+                'orderid': exit_orderid,  # Use real order ID from OpenAlgo
                 'product': trade.leg.product_type.upper() if trade.leg.product_type else 'MIS',
                 'quantity': 0.0,  # OpenAlgo format shows 0.0 for executed trades
                 'average_price': trade.exit_price,
@@ -1167,12 +1171,16 @@ def close_all_positions(strategy_id):
                     logger.info(f"[THREAD] Close order response for {position.symbol}: {response}")
 
                     if response and response.get('status') == 'success':
+                        # Get exit order ID from response
+                        exit_order_id = response.get('orderid')
+
                         # Get fresh position from database to avoid stale data
                         position_to_update = StrategyExecution.query.get(position.id)
 
                         if position_to_update:
                             # Update position status
                             position_to_update.status = 'exited'
+                            position_to_update.exit_order_id = exit_order_id  # Store the real exit order ID
                             position_to_update.exit_time = datetime.utcnow()
                             position_to_update.exit_reason = 'manual_close'
                             position_to_update.broker_order_status = 'complete'

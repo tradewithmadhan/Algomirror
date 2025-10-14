@@ -344,7 +344,8 @@ class StrategyExecution(db.Model):
     leg_id = db.Column(db.Integer, db.ForeignKey('strategy_legs.id'), nullable=False)
 
     # Order details
-    order_id = db.Column(db.String(100))
+    order_id = db.Column(db.String(100))  # Entry order ID
+    exit_order_id = db.Column(db.String(100))  # Exit order ID from OpenAlgo
     symbol = db.Column(db.String(100))  # Actual traded symbol
     exchange = db.Column(db.String(20))
     entry_price = db.Column(db.Float)
