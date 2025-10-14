@@ -233,9 +233,9 @@ class StrategyExecutor:
         import time
 
         # Add staggered delay based on thread index to prevent OpenAlgo race condition
-        # Each thread waits: index * 150ms (0ms, 150ms, 300ms, 450ms, ...)
+        # Each thread waits: index * 300ms (0ms, 300ms, 600ms, 900ms, ...)
         # This GUARANTEES threads never hit OpenAlgo at the same time
-        delay = thread_index * 0.15
+        delay = thread_index * 0.3
         if delay > 0:
             time.sleep(delay)
             logger.info(f"[THREAD {thread_index}] Waited {delay:.2f}s to prevent race condition")
