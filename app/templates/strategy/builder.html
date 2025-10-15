@@ -64,7 +64,8 @@
                         <label class="label">
                             <span class="label-text">Risk Profile</span>
                         </label>
-                        <select id="riskProfile" class="select select-bordered">
+                        <select id="riskProfile" class="select select-bordered" onchange="toggleLotFields()">
+                            <option value="fixed_lots" {% if strategy and strategy.risk_profile == 'fixed_lots' %}selected{% elif not strategy %}selected{% endif %}>Fixed Lot Size (Default)</option>
                             <option value="balanced" {% if strategy and strategy.risk_profile == 'balanced' %}selected{% endif %}>Balanced (65% margin)</option>
                             <option value="conservative" {% if strategy and strategy.risk_profile == 'conservative' %}selected{% endif %}>Conservative (40% margin)</option>
                             <option value="aggressive" {% if strategy and strategy.risk_profile == 'aggressive' %}selected{% endif %}>Aggressive (80% margin)</option>
@@ -537,6 +538,9 @@ function addLeg() {
     clone.querySelector('.leg-number').textContent = legCount;
 
     document.getElementById('strategyLegs').appendChild(clone);
+
+    // Apply lot field state based on current risk profile
+    toggleLotFields();
 }
 
 // Remove a leg
@@ -938,6 +942,30 @@ async function checkAndFreezePendingLegs() {
     {% endif %}
 }
 
+// Toggle lot fields based on risk profile selection
+function toggleLotFields() {
+    const riskProfile = document.getElementById('riskProfile').value;
+    const isFixedLots = riskProfile === 'fixed_lots';
+
+    // Get all lot input fields
+    const lotFields = document.querySelectorAll('.leg-lots');
+
+    lotFields.forEach(field => {
+        if (isFixedLots) {
+            // Enable lot fields for fixed lot size
+            field.disabled = false;
+            field.classList.remove('input-disabled', 'cursor-not-allowed');
+            field.placeholder = '1';
+        } else {
+            // Disable lot fields for margin-based profiles
+            field.disabled = true;
+            field.classList.add('input-disabled', 'cursor-not-allowed');
+            field.value = ''; // Clear the value
+            field.placeholder = 'Auto (calculated at execution)';
+        }
+    });
+}
+
 // Toggle strike input based on selection
 function toggleStrikeInput(select) {
     const legItem = select.closest('.leg-item');
@@ -974,6 +1002,9 @@ function toggleStrikeInput(select) {
 
 // Save strategy
 function saveStrategy(execute = false) {
+    const riskProfile = document.getElementById('riskProfile').value;
+    const isFixedLots = riskProfile === 'fixed_lots';
+
     const legs = [];
     document.querySelectorAll('.leg-item').forEach((legItem, index) => {
         // Skip executed or pending legs - backend preserves them automatically
@@ -994,16 +1025,21 @@ function saveStrategy(execute = false) {
 
         const orderType = legItem.querySelector('.leg-order-type').value;
         const limitPrice = legItem.querySelector('.leg-limit-price')?.value;
-        const lots = parseInt(legItem.querySelector('.leg-lots').value) || 1;
 
-        // Calculate quantity based on instrument and lots
-        // Use lot sizes from database (fetched on page load)
-        const instrument = legItem.querySelector('.leg-instrument').value;
-        let lotSize = lotSizes[instrument] || 75; // Use fetched lot size or default to 75
-        const calculatedQuantity = lots * lotSize;
+        // For margin-based profiles, don't send lots/quantity (will be calculated at execution)
+        // For fixed lots profile, send the specified lots and calculated quantity
+        let lots = null;
+        let calculatedQuantity = null;
+
+        if (isFixedLots) {
+            lots = parseInt(legItem.querySelector('.leg-lots').value) || 1;
+            const instrument = legItem.querySelector('.leg-instrument').value;
+            let lotSize = lotSizes[instrument] || 75;
+            calculatedQuantity = lots * lotSize;
+        }
 
         legs.push({
-            instrument: instrument,
+            instrument: legItem.querySelector('.leg-instrument').value,
             product_type: legItem.querySelector('.leg-product-type').value,
             expiry: legItem.querySelector('.leg-expiry').value,
             action: legItem.querySelector('.leg-action').value,
@@ -1012,8 +1048,8 @@ function saveStrategy(execute = false) {
             strike_price: strikeSelect?.value === 'strike_price' ? parseFloat(strikeValue) : null,
             strike_offset: strikeOffset,
             premium_value: strikeSelect?.value === 'premium_near' ? parseFloat(strikeValue) : null,
-            lots: lots,
-            quantity: calculatedQuantity,  // Use calculated quantity
+            lots: lots,  // null for margin-based profiles
+            quantity: calculatedQuantity,  // null for margin-based profiles
             order_type: orderType,
             limit_price: limitPrice ? parseFloat(limitPrice) : null,
             trigger_price: null,
@@ -1241,6 +1277,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         startStatusPolling();
     }, 1000); // Wait 1 second for data to load
     {% endif %}
+
+    // Set initial lot field state based on risk profile
+    toggleLotFields();
 });
 
 // Strategy-level execution tracking functions

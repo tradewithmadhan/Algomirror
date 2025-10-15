@@ -231,49 +231,138 @@ class MarginCalculator:
             logger.error(f"Error calculating lot size: {e}")
             return 0, {"error": str(e)}
 
+    def calculate_lot_size_custom(self,
+                                  account: TradingAccount,
+                                  instrument: str,
+                                  trade_type: str,
+                                  margin_percentage: float,
+                                  available_margin: Optional[float] = None) -> Tuple[int, Dict]:
+        """
+        Calculate optimal lot size with custom margin percentage (for risk profiles)
+
+        Args:
+            account: Trading account object
+            instrument: NIFTY, BANKNIFTY, or SENSEX
+            trade_type: 'sell_c_p', 'sell_c_and_p', 'buy', 'futures'
+            margin_percentage: Percentage of margin to use (0.0 to 1.0, e.g., 0.65 for 65%)
+            available_margin: Override available margin if provided
+
+        Returns:
+            Tuple of (lot_size, calculation_details)
+        """
+        try:
+            logger.info(f"[LOT CALC DEBUG] Starting custom lot calculation for {account.account_name}")
+            logger.info(f"[LOT CALC DEBUG] Instrument: {instrument}, Trade Type: {trade_type}, Margin %: {margin_percentage*100}%")
+
+            # Get available margin if not provided
+            if available_margin is None:
+                # Check if it's a manual calculation (dummy account)
+                if hasattr(account, 'available_margin'):
+                    available_margin = account.available_margin
+                    logger.info(f"[LOT CALC DEBUG] Using account.available_margin: ₹{available_margin:,.2f}")
+                else:
+                    available_margin = self.get_available_margin(account)
+                    logger.info(f"[LOT CALC DEBUG] Fetched available margin: ₹{available_margin:,.2f}")
+            else:
+                logger.info(f"[LOT CALC DEBUG] Using provided available margin: ₹{available_margin:,.2f}")
+
+            # Get margin requirement per lot
+            margin_per_lot = self.get_margin_requirement(instrument, trade_type)
+            logger.info(f"[LOT CALC DEBUG] Margin per lot: ₹{margin_per_lot:,.2f}")
+
+            if margin_per_lot <= 0:
+                logger.error(f"[LOT CALC DEBUG] Invalid margin requirement: {margin_per_lot}")
+                return 0, {"error": "Invalid margin requirement"}
+
+            # Calculate effective available margin using custom percentage
+            effective_margin = available_margin * margin_percentage
+            logger.info(f"[LOT CALC DEBUG] Effective margin (₹{available_margin:,.2f} × {margin_percentage*100}%): ₹{effective_margin:,.2f}")
+
+            # Calculate raw lot size
+            raw_lot_size = effective_margin / margin_per_lot
+            logger.info(f"[LOT CALC DEBUG] Raw lot size (₹{effective_margin:,.2f} / ₹{margin_per_lot:,.2f}): {raw_lot_size:.3f}")
+
+            # Round down to nearest integer
+            lot_size = int(raw_lot_size)
+            logger.info(f"[LOT CALC DEBUG] Final lot size (rounded down): {lot_size}")
+
+            # Prepare calculation details
+            details = {
+                "available_margin": available_margin,
+                "margin_percentage": margin_percentage * 100,  # Convert to percentage for display
+                "effective_margin": effective_margin,
+                "margin_per_lot": margin_per_lot,
+                "raw_lot_size": raw_lot_size,
+                "final_lot_size": lot_size,
+                "margin_required": lot_size * margin_per_lot,
+                "margin_remaining": available_margin - (lot_size * margin_per_lot),
+                "calculation": f"{available_margin:.2f} × {margin_percentage*100}% / {margin_per_lot:.2f} = {raw_lot_size:.3f} = {lot_size} lots"
+            }
+
+            logger.info(f"[LOT CALC DEBUG] Margin required: ₹{details['margin_required']:,.2f}, Remaining: ₹{details['margin_remaining']:,.2f}")
+            logger.info(f"Custom margin lot calculation for {account.account_name}: {details['calculation']}")
+            return lot_size, details
+
+        except Exception as e:
+            logger.error(f"[LOT CALC DEBUG] Error calculating lot size with custom margin: {e}", exc_info=True)
+            return 0, {"error": str(e)}
+
     def get_available_margin(self, account: TradingAccount) -> float:
         """Get real-time available margin from account"""
         try:
+            logger.info(f"[MARGIN DEBUG] Getting available margin for account: {account.account_name} (ID: {account.id})")
+
             # Check if account has margin tracker
             tracker = MarginTracker.query.filter_by(account_id=account.id).first()
 
             # If tracker exists and is recent (< 5 minutes), use cached data
             if tracker and tracker.last_updated:
                 time_diff = (datetime.utcnow() - tracker.last_updated).seconds
+                logger.info(f"[MARGIN DEBUG] Found tracker, last updated {time_diff} seconds ago")
                 if time_diff < 300:  # 5 minutes
+                    logger.info(f"[MARGIN DEBUG] Using cached margin: ₹{tracker.free_margin:,.2f}")
                     return tracker.free_margin
 
             # Fetch fresh margin data from API
+            logger.info(f"[MARGIN DEBUG] Fetching fresh margin data from API: {account.host_url}")
             client = ExtendedOpenAlgoAPI(
                 api_key=account.get_api_key(),
                 host=account.host_url
             )
 
             response = client.funds()
+            logger.info(f"[MARGIN DEBUG] API Response status: {response.get('status')}")
 
             if response.get('status') == 'success':
                 funds_data = response.get('data', {})
+                logger.info(f"[MARGIN DEBUG] Funds data received: {funds_data}")
 
                 # Create or update margin tracker
                 if not tracker:
                     tracker = MarginTracker(account_id=account.id)
                     from app import db
                     db.session.add(tracker)
+                    logger.info(f"[MARGIN DEBUG] Created new MarginTracker for account {account.id}")
 
                 tracker.update_margins(funds_data)
                 from app import db
                 db.session.commit()
 
+                logger.info(f"[MARGIN DEBUG] Updated tracker - Free margin: ₹{tracker.free_margin:,.2f}, Used margin: ₹{tracker.used_margin:,.2f}")
                 return tracker.free_margin
 
             else:
+                logger.warning(f"[MARGIN DEBUG] API call failed, status: {response.get('status')}, message: {response.get('message')}")
                 # Fallback to cached data if available
                 if account.last_funds_data:
-                    return account.last_funds_data.get('totalcash', 0)
+                    fallback_margin = account.last_funds_data.get('totalcash', 0)
+                    logger.info(f"[MARGIN DEBUG] Using fallback margin from last_funds_data: ₹{fallback_margin:,.2f}")
+                    return fallback_margin
+                logger.warning(f"[MARGIN DEBUG] No fallback data available, returning 0")
                 return 0
 
         except Exception as e:
-            logger.error(f"Error fetching available margin: {e}")
+            logger.error(f"[MARGIN DEBUG] Error fetching available margin: {e}", exc_info=True)
             return 0
 
     def calculate_multi_trade_lots(self,

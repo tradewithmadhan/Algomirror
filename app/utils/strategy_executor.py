@@ -35,6 +35,20 @@ class StrategyExecutor:
         self.margin_calculator = None
         self.account_margins = {}  # Track available margin per account
 
+        # Map strategy risk_profile to margin percentage
+        # Fixed lots doesn't use margin calculator, so these only apply to margin-based profiles
+        self.risk_profile_margins = {
+            'conservative': 0.40,  # Use 40% of available margin
+            'balanced': 0.65,      # Use 65% of available margin
+            'aggressive': 0.80     # Use 80% of available margin
+        }
+
+        # Get margin percentage from risk profile
+        self.margin_percentage = self.risk_profile_margins.get(
+            strategy.risk_profile,
+            0.65  # Default to 65% if risk_profile is not set or is 'fixed_lots'
+        )
+
         # Store app reference for thread context
         from flask import current_app
         self.app = current_app._get_current_object()
@@ -42,6 +56,7 @@ class StrategyExecutor:
         if use_margin_calculator:
             from app.utils.margin_calculator import MarginCalculator
             self.margin_calculator = MarginCalculator(strategy.user_id)
+            logger.info(f"Strategy {strategy.id} ({strategy.name}): Using {self.margin_percentage*100}% margin based on risk_profile '{strategy.risk_profile}'")
 
     def _get_active_accounts(self) -> List[TradingAccount]:
         """Get active trading accounts for strategy"""
@@ -283,7 +298,9 @@ class StrategyExecutor:
                 print(f"[ORDER PARAMS] Placing order for {account_name}: {order_params}")
                 logger.debug(f"Order params: {order_params}")
 
-                # Place order with retry logic for reliability
+                # Place order with freeze quantity check and retry logic for reliability
+                from app.utils.freeze_quantity_handler import place_order_with_freeze_check
+
                 max_retries = 3
                 retry_delay = 1  # Start with 1 second
                 response = None
@@ -291,7 +308,12 @@ class StrategyExecutor:
 
                 for attempt in range(max_retries):
                     try:
-                        response = client.placeorder(**order_params)
+                        # Use freeze-aware order placement
+                        response = place_order_with_freeze_check(
+                            client=client,
+                            user_id=self.strategy.user_id,
+                            **order_params
+                        )
                         print(f"[ORDER RESPONSE] Attempt {attempt + 1}: {response}")
 
                         # If we got a response, break the retry loop
@@ -831,28 +853,43 @@ class StrategyExecutor:
 
     def _calculate_quantity(self, leg: StrategyLeg, num_accounts: int, account: TradingAccount = None) -> int:
         """Calculate quantity per account based on allocation type and available margin"""
+        logger.info(f"[QTY CALC DEBUG] Starting quantity calculation for leg {leg.leg_number}, account: {account.account_name if account else 'None'}")
+        logger.info(f"[QTY CALC DEBUG] use_margin_calculator: {self.use_margin_calculator}, num_accounts: {num_accounts}")
+
         # Get lot size for the instrument
         lot_size = self._get_lot_size(leg)
+        logger.info(f"[QTY CALC DEBUG] Lot size for {leg.instrument}: {lot_size}")
 
         # If margin calculator is enabled and account provided, calculate based on margin
         if self.use_margin_calculator and self.margin_calculator and account:
+            logger.info(f"[QTY CALC DEBUG] Using margin calculator for {account.account_name}")
+
             # Determine trade type for margin calculation
             trade_type = self._get_trade_type_for_margin(leg)
+            logger.info(f"[QTY CALC DEBUG] Trade type: {trade_type}")
 
             # Get available margin for the account
             if account.id not in self.account_margins:
+                logger.info(f"[QTY CALC DEBUG] Fetching fresh margin for account {account.id}")
                 self.account_margins[account.id] = self.margin_calculator.get_available_margin(account)
+            else:
+                logger.info(f"[QTY CALC DEBUG] Using cached margin for account {account.id}")
 
             available_margin = self.account_margins[account.id]
+            logger.info(f"[QTY CALC DEBUG] Available margin for {account.account_name}: ₹{available_margin:,.2f}")
+            logger.info(f"[QTY CALC DEBUG] Risk profile: {self.strategy.risk_profile}, Margin %: {self.margin_percentage*100}%")
 
-            # Calculate optimal lot size based on margin
-            optimal_lots, details = self.margin_calculator.calculate_lot_size(
+            # Calculate optimal lot size based on margin with custom percentage
+            optimal_lots, details = self.margin_calculator.calculate_lot_size_custom(
                 account=account,
                 instrument=leg.instrument,
                 trade_type=trade_type,
-                quality_grade=self.trade_quality,
+                margin_percentage=self.margin_percentage,
                 available_margin=available_margin
             )
+
+            logger.info(f"[QTY CALC DEBUG] Calculated optimal lots: {optimal_lots}")
+            logger.info(f"[QTY CALC DEBUG] Calculation details: {details}")
 
             if optimal_lots > 0:
                 # Update remaining margin for next trades
@@ -862,12 +899,15 @@ class StrategyExecutor:
                 # Convert lots to quantity
                 total_quantity = optimal_lots * lot_size
 
+                logger.info(f"[QTY CALC DEBUG] Margin used: ₹{margin_used:,.2f}, Remaining margin: ₹{self.account_margins[account.id]:,.2f}")
+                logger.info(f"[QTY CALC DEBUG] Final quantity: {optimal_lots} lots × {lot_size} = {total_quantity}")
                 logger.info(f"Margin-based calculation for {account.account_name}: "
                            f"{optimal_lots} lots = {total_quantity} qty "
                            f"(Margin: {available_margin:.2f} -> {self.account_margins[account.id]:.2f})")
 
                 return total_quantity
             else:
+                logger.warning(f"[QTY CALC DEBUG] Insufficient margin! optimal_lots={optimal_lots}")
                 logger.warning(f"Insufficient margin for {leg.instrument} on {account.account_name}")
                 return 0
 
@@ -1260,7 +1300,12 @@ class StrategyExecutor:
             # Reverse the action
             exit_action = 'SELL' if execution.leg.action == 'BUY' else 'BUY'
 
-            response = client.placeorder(
+            # Use freeze-aware order placement for exit orders
+            from app.utils.freeze_quantity_handler import place_order_with_freeze_check
+
+            response = place_order_with_freeze_check(
+                client=client,
+                user_id=self.strategy.user_id,
                 strategy=self.strategy.name,
                 symbol=execution.symbol,
                 action=exit_action,

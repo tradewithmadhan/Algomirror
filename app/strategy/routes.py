@@ -300,22 +300,45 @@ def execute_strategy(strategy_id):
 
         logger.info(f"Executing strategy {strategy_id} ({strategy.name}): {len(unexecuted_legs)} unexecuted legs out of {leg_count} total")
 
-        # Check if any leg has explicit quantity set (only check unexecuted legs)
-        has_explicit_quantities = any(leg.quantity and leg.quantity > 0 for leg in unexecuted_legs)
+        # Check if risk profile is set to fixed lot size
+        is_fixed_lots = strategy.risk_profile == 'fixed_lots'
 
-        # If explicit quantities are set, disable margin calculator
-        use_margin_calc = not has_explicit_quantities
+        logger.info(f"[EXEC DEBUG] Strategy {strategy_id} execution started")
+        logger.info(f"[EXEC DEBUG] Risk profile: {strategy.risk_profile}")
+        logger.info(f"[EXEC DEBUG] Selected accounts: {strategy.selected_accounts}")
+        logger.info(f"[EXEC DEBUG] Total legs: {leg_count}, Unexecuted legs: {len(unexecuted_legs)}")
 
-        if has_explicit_quantities:
-            logger.info(f"Strategy {strategy_id}: Using explicit quantities, bypassing margin calculator")
+        # For margin-based profiles (balanced, conservative, aggressive):
+        # Use MarginCalculator to calculate lots dynamically at execution time
+        # For fixed_lots profile: Use explicit lot sizes from legs
+        if is_fixed_lots:
+            # Verify that all legs have explicit lots defined
+            missing_lots = [leg for leg in unexecuted_legs if not leg.lots or leg.lots <= 0]
+            if missing_lots:
+                logger.error(f"[EXEC DEBUG] Fixed lots profile but {len(missing_lots)} legs missing lot values")
+                return jsonify({
+                    'status': 'error',
+                    'message': f'Fixed Lot Size profile requires all legs to have lots specified. {len(missing_lots)} leg(s) missing lot values.'
+                }), 400
+            use_margin_calc = False
+            logger.info(f"[EXEC DEBUG] Strategy {strategy_id}: Risk profile is 'Fixed Lot Size', using explicit lot sizes")
+            for leg in unexecuted_legs:
+                logger.info(f"[EXEC DEBUG] Leg {leg.leg_number}: {leg.instrument} {leg.action} - {leg.lots} lots")
         else:
-            logger.info(f"Strategy {strategy_id}: Using margin calculator for lot sizing")
+            # Margin-based profiles: use MarginCalculator
+            use_margin_calc = True
+            logger.info(f"[EXEC DEBUG] Strategy {strategy_id}: Using MarginCalculator with risk profile '{strategy.risk_profile}'")
+            for leg in unexecuted_legs:
+                logger.info(f"[EXEC DEBUG] Leg {leg.leg_number}: {leg.instrument} {leg.action} - lots will be calculated dynamically")
 
         # Initialize strategy executor
+        logger.info(f"[EXEC DEBUG] Initializing StrategyExecutor...")
         executor = StrategyExecutor(strategy, use_margin_calculator=use_margin_calc)
 
         # Execute strategy
+        logger.info(f"[EXEC DEBUG] Executing strategy...")
         results = executor.execute()
+        logger.info(f"[EXEC DEBUG] Execution complete. Results count: {len(results)}")
 
         # Count successful, failed, and skipped executions
         # With Phase 2: 'pending' means order placed successfully, being tracked in background
@@ -1109,7 +1132,7 @@ def close_all_positions(strategy_id):
         results = []
         results_lock = threading.Lock()
 
-        def close_position_worker(position, strategy_name, product_type, thread_index):
+        def close_position_worker(position, strategy_name, product_type, thread_index, user_id):
             """Worker function to close a single position in parallel"""
             import time
 
@@ -1139,7 +1162,9 @@ def close_all_positions(strategy_id):
 
                     logger.info(f"[THREAD] Placing close order: {close_action} {position.quantity} {position.symbol} on {position.exchange}")
 
-                    # Place close order with retry logic
+                    # Place close order with freeze-aware placement and retry logic
+                    from app.utils.freeze_quantity_handler import place_order_with_freeze_check
+
                     max_retries = 3
                     retry_delay = 1
                     response = None
@@ -1147,7 +1172,10 @@ def close_all_positions(strategy_id):
 
                     for attempt in range(max_retries):
                         try:
-                            response = client.placeorder(
+                            # Use freeze-aware order placement for close orders
+                            response = place_order_with_freeze_check(
+                                client=client,
+                                user_id=user_id,
                                 strategy=strategy_name,
                                 symbol=position.symbol,
                                 exchange=position.exchange,
@@ -1250,7 +1278,7 @@ def close_all_positions(strategy_id):
         for idx, position in enumerate(open_positions):
             thread = threading.Thread(
                 target=close_position_worker,
-                args=(position, strategy.name, strategy.product_order_type, idx),
+                args=(position, strategy.name, strategy.product_order_type, idx, strategy.user_id),
                 name=f"ClosePosition_{position.symbol}_{position.account.account_name}"
             )
             threads.append(thread)

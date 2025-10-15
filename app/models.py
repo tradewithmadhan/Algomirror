@@ -257,7 +257,7 @@ class Strategy(db.Model):
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
     market_condition = db.Column(db.String(50))  # 'non_expiry', 'expiry', 'any'
-    risk_profile = db.Column(db.String(50))  # 'balanced', 'conservative', 'aggressive'
+    risk_profile = db.Column(db.String(50))  # 'fixed_lots' (default), 'balanced', 'conservative', 'aggressive'
     is_active = db.Column(db.Boolean, default=True)
     is_template = db.Column(db.Boolean, default=False)
 
@@ -646,8 +646,10 @@ class MarginTracker(db.Model):
 
     def update_margins(self, funds_data):
         """Update margins from funds API response"""
-        self.total_available_margin = funds_data.get('totalcash', 0)
-        self.used_margin = funds_data.get('margins', 0)
+        # OpenAlgo returns 'availablecash' not 'totalcash'
+        self.total_available_margin = funds_data.get('availablecash', 0)
+        # OpenAlgo returns 'utiliseddebits' not 'margins'
+        self.used_margin = funds_data.get('utiliseddebits', 0)
         self.free_margin = self.total_available_margin - self.used_margin
         self.span_margin = funds_data.get('spanmargin', 0)
         self.exposure_margin = funds_data.get('exposuremargin', 0)

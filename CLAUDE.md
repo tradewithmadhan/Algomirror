@@ -312,6 +312,46 @@ holdings = client.holdings()
 5. Account saved only if ping succeeds
 6. Real-time connection status tracking
 
+## Strategy Builder and Risk Profiles
+
+### Risk Profile System
+The strategy builder (`app/templates/strategy/builder.html` and `app/strategy/routes.py`) supports four risk profiles that control lot sizing:
+
+1. **Fixed Lot Size** (default - `risk_profile='fixed_lots'`)
+   - Uses explicit lot sizes specified in each strategy leg
+   - Bypasses the MarginCalculator entirely
+   - Best for strategies with predetermined position sizes
+   - Selected in Risk Profile dropdown: "Fixed Lot Size (Default)"
+
+2. **Balanced** (`risk_profile='balanced'`)
+   - Uses 65% of available margin for lot size calculation
+   - Calculated dynamically using MarginCalculator
+   - Moderate risk approach
+
+3. **Conservative** (`risk_profile='conservative'`)
+   - Uses 40% of available margin for lot size calculation
+   - Lower risk, smaller position sizes
+
+4. **Aggressive** (`risk_profile='aggressive'`)
+   - Uses 80% of available margin for lot size calculation
+   - Higher risk, larger position sizes
+
+### Strategy Execution Logic
+Located in `app/strategy/routes.py:301-319`:
+- If `risk_profile == 'fixed_lots'`: Margin calculator is disabled, uses explicit lot sizes
+- If `risk_profile` is 'balanced', 'conservative', or 'aggressive': Uses MarginCalculator with corresponding margin percentage
+- MarginCalculator (`app/margin/routes.py:287-337`) calculates optimal lot sizes based on:
+  - Available margin in account
+  - Margin required per lot (from MarginRequirement model)
+  - Quality grade (A, B, C) with corresponding margin percentages
+  - Freeze quantity limits from TradingSettings
+
+### Important Notes
+- The Risk Profile field in Basic Information section controls lot sizing behavior
+- When creating a new strategy, "Fixed Lot Size" is selected by default
+- Changing risk profile from "Fixed Lot Size" to another option enables dynamic lot sizing
+- Strategy model field: `Strategy.risk_profile` (String, 50 chars max) - see `app/models.py:260`
+
 ## Security Features
 
 ### Authentication & Authorization
