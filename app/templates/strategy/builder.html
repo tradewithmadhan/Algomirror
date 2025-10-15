@@ -257,9 +257,25 @@
                     </div>
                     <div class="stats shadow mt-4">
                         <div class="stat">
-                            <div class="stat-title">Total P&L</div>
-                            <div class="stat-value text-primary" id="total-pnl">₹0.00</div>
+                            <div class="stat-title">Total P&L (Realized + Unrealized)</div>
+                            <div class="stat-value" id="total-pnl">
+                                {% if strategy %}
+                                    ₹{{ "%.2f"|format(strategy.total_pnl) }}
+                                {% else %}
+                                    ₹0.00
+                                {% endif %}
+                            </div>
+                            <div class="stat-desc">Persists even after positions close</div>
                         </div>
+                        {% if strategy %}
+                        <div class="stat">
+                            <div class="stat-title">Realized P&L</div>
+                            <div class="stat-value text-sm {% if strategy.realized_pnl >= 0 %}text-success{% else %}text-error{% endif %}" id="realized-pnl">
+                                ₹{{ "%.2f"|format(strategy.realized_pnl) }}
+                            </div>
+                            <div class="stat-desc">From closed positions</div>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
 
@@ -289,9 +305,23 @@
                     </div>
                     <div class="stats shadow mt-4">
                         <div class="stat">
-                            <div class="stat-title">Total Unrealized P&L</div>
-                            <div class="stat-value" id="total-unrealized-pnl">₹0.00</div>
+                            <div class="stat-title">Total P&L (Realized + Unrealized)</div>
+                            <div class="stat-value" id="total-positions-pnl">
+                                {% if strategy %}
+                                    ₹{{ "%.2f"|format(strategy.total_pnl) }}
+                                {% else %}
+                                    ₹0.00
+                                {% endif %}
+                            </div>
+                            <div class="stat-desc">Includes open and closed positions</div>
                         </div>
+                        {% if strategy %}
+                        <div class="stat">
+                            <div class="stat-title">Open Positions</div>
+                            <div class="stat-value text-sm" id="open-positions-count">0</div>
+                            <div class="stat-desc">Currently active</div>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -1408,9 +1438,7 @@ async function loadTradebook(strategyId) {
             if (trades.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/60">No trades found</td></tr>';
             } else {
-                let totalTradeValue = 0;
                 trades.forEach(trade => {
-                    totalTradeValue += trade.trade_value || 0;
                     const row = tbody.insertRow();
                     row.innerHTML = `
                         <td><span class="badge badge-outline badge-sm">${trade.account_name || 'N/A'}</span></td>
@@ -1424,12 +1452,6 @@ async function loadTradebook(strategyId) {
                         <td class="text-xs">${trade.timestamp || '-'}</td>
                     `;
                 });
-
-                // Update total trade value
-                const totalValueEl = document.getElementById('total-trade-value');
-                if (totalValueEl) {
-                    totalValueEl.textContent = `₹${totalTradeValue.toFixed(2)}`;
-                }
             }
         }
     } catch (error) {
@@ -1449,14 +1471,26 @@ async function loadPositions(strategyId) {
             const positions = data.data || [];
 
             if (positions.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/60">No open positions</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-base-content/60">No positions</td></tr>';
+
+                // Update open positions count to 0
+                const countElement = document.getElementById('open-positions-count');
+                if (countElement) {
+                    countElement.textContent = '0';
+                }
             } else {
-                let totalPnl = 0;
+                let openPositionsCount = 0;
+
                 positions.forEach(position => {
                     const pnl = parseFloat(position.pnl) || 0;
-                    totalPnl += pnl;
                     const row = tbody.insertRow();
                     const qty = parseInt(position.quantity) || 0;
+
+                    // Count only open positions (qty != 0 and not closed)
+                    if (qty !== 0 && position.is_closed !== true) {
+                        openPositionsCount++;
+                    }
+
                     const action = qty < 0 ? 'SELL' : 'BUY';
                     row.innerHTML = `
                         <td><span class="badge badge-outline badge-sm">${position.account_name || 'N/A'}</span></td>
@@ -1471,11 +1505,10 @@ async function loadPositions(strategyId) {
                     `;
                 });
 
-                // Update total P&L
-                const totalElement = document.getElementById('total-unrealized-pnl');
-                if (totalElement) {
-                    totalElement.textContent = `₹${totalPnl.toFixed(2)}`;
-                    totalElement.className = totalPnl >= 0 ? 'stat-value text-success' : 'stat-value text-error';
+                // Update open positions count
+                const countElement = document.getElementById('open-positions-count');
+                if (countElement) {
+                    countElement.textContent = openPositionsCount;
                 }
             }
         }

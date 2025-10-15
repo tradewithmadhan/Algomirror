@@ -285,6 +285,86 @@ class Strategy(db.Model):
     legs = db.relationship('StrategyLeg', backref='strategy', lazy='dynamic', cascade='all, delete-orphan')
     executions = db.relationship('StrategyExecution', backref='strategy', lazy='dynamic', cascade='all, delete-orphan')
 
+    @property
+    def total_pnl(self):
+        """
+        Calculate total P&L for this strategy (realized + unrealized)
+
+        Returns:
+            float: Total P&L from all executions
+        """
+        total = 0.0
+
+        # Get all executions for this strategy
+        all_executions = self.executions.all()
+
+        for execution in all_executions:
+            # Skip failed, rejected, or cancelled executions
+            if execution.status == 'error' or execution.status == 'failed':
+                continue
+            if hasattr(execution, 'broker_order_status') and execution.broker_order_status in ['rejected', 'cancelled']:
+                continue
+
+            # Add realized P&L (from closed positions)
+            if execution.realized_pnl is not None:
+                total += execution.realized_pnl
+
+            # Add unrealized P&L (from open positions)
+            if execution.unrealized_pnl is not None and execution.status == 'entered':
+                total += execution.unrealized_pnl
+
+        return total
+
+    @property
+    def realized_pnl(self):
+        """
+        Calculate total realized P&L for this strategy (only from closed positions)
+
+        Returns:
+            float: Total realized P&L
+        """
+        total = 0.0
+
+        # Get all executions for this strategy
+        all_executions = self.executions.all()
+
+        for execution in all_executions:
+            # Skip failed, rejected, or cancelled executions
+            if execution.status == 'error' or execution.status == 'failed':
+                continue
+            if hasattr(execution, 'broker_order_status') and execution.broker_order_status in ['rejected', 'cancelled']:
+                continue
+
+            # Add only realized P&L
+            if execution.realized_pnl is not None:
+                total += execution.realized_pnl
+
+        return total
+
+    @property
+    def unrealized_pnl(self):
+        """
+        Calculate total unrealized P&L for this strategy (only from open positions)
+
+        Returns:
+            float: Total unrealized P&L
+        """
+        total = 0.0
+
+        # Get all executions with open positions
+        all_executions = self.executions.filter_by(status='entered').all()
+
+        for execution in all_executions:
+            # Skip rejected or cancelled executions
+            if hasattr(execution, 'broker_order_status') and execution.broker_order_status in ['rejected', 'cancelled']:
+                continue
+
+            # Add unrealized P&L
+            if execution.unrealized_pnl is not None:
+                total += execution.unrealized_pnl
+
+        return total
+
     def __repr__(self):
         return f'<Strategy {self.name}>'
 

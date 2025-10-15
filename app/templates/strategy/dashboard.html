@@ -372,21 +372,25 @@ async function loadStrategyMetrics() {
 
     for (const strategy of strategies.slice(0, 5)) {
         try {
-            // Load positions
+            // Load positions for position count
             const posResponse = await fetch(`/strategy/${strategy.id}/positions`);
             const posData = await posResponse.json();
 
-            let totalPnl = 0;
             let positionCount = 0;
 
             if (posData.status === 'success' && posData.data) {
                 const positions = posData.data || [];
-                positionCount = positions.length;
 
-                // Calculate total P&L from positions
-                positions.forEach(pos => {
-                    totalPnl += parseFloat(pos.pnl) || 0;
-                });
+                // Count only OPEN positions (exclude closed positions with qty=0)
+                positionCount = positions.filter(pos => {
+                    // Check if is_closed flag is set (new format)
+                    if (pos.is_closed === true) {
+                        return false;
+                    }
+                    // Also check quantity (closed positions have qty=0)
+                    const qty = parseInt(pos.quantity) || 0;
+                    return qty !== 0;
+                }).length;
 
                 const posElement = document.getElementById(`positions-${strategy.id}`);
                 if (posElement) {
@@ -398,15 +402,26 @@ async function loadStrategyMetrics() {
                         if (closeBtn) {
                             closeBtn.style.display = 'inline-flex';
                         }
+                    } else {
+                        posElement.classList.remove('badge-warning');
+                        // Hide close button if no open positions
+                        const closeBtn = document.getElementById(`close-btn-${strategy.id}`);
+                        if (closeBtn) {
+                            closeBtn.style.display = 'none';
+                        }
                     }
                 }
+            }
 
-                // Update P&L
-                const pnlElement = document.getElementById(`pnl-${strategy.id}`);
-                if (pnlElement) {
-                    pnlElement.textContent = `₹${totalPnl.toFixed(2)}`;
-                    pnlElement.className = totalPnl >= 0 ? 'font-semibold text-success' : 'font-semibold text-error';
-                }
+            // Use cumulative P&L from strategy properties (includes realized + unrealized)
+            // This persists even after positions are closed
+            const totalPnl = strategy.total_pnl || 0;
+
+            // Update P&L display with cumulative value
+            const pnlElement = document.getElementById(`pnl-${strategy.id}`);
+            if (pnlElement) {
+                pnlElement.textContent = `₹${totalPnl.toFixed(2)}`;
+                pnlElement.className = totalPnl >= 0 ? 'font-semibold text-success' : 'font-semibold text-error';
             }
         } catch (error) {
             console.error(`Error loading metrics for strategy ${strategy.id}:`, error);

@@ -65,7 +65,11 @@ def dashboard():
             'allocation_type': strategy.allocation_type,
             'max_loss': strategy.max_loss,
             'max_profit': strategy.max_profit,
-            'trailing_sl': strategy.trailing_sl
+            'trailing_sl': strategy.trailing_sl,
+            # Per-strategy P&L calculation using new properties
+            'total_pnl': strategy.total_pnl,
+            'realized_pnl': strategy.realized_pnl,
+            'unrealized_pnl': strategy.unrealized_pnl
         })
 
     # Convert accounts to dictionaries for JSON serialization
@@ -1014,16 +1018,17 @@ def strategy_tradebook(strategy_id):
 @strategy_bp.route('/<int:strategy_id>/positions', methods=['GET'])
 @login_required
 def strategy_positions(strategy_id):
-    """Get strategy-level open positions (OpenAlgo format)"""
+    """Get strategy-level positions including closed positions with qty=0 (OpenAlgo format)"""
     strategy = Strategy.query.filter_by(
         id=strategy_id,
         user_id=current_user.id
     ).first_or_404()
 
-    # Get open positions (only status='entered', exclude rejected/cancelled/failed)
-    positions = StrategyExecution.query.filter_by(
-        strategy_id=strategy_id,
-        status='entered'
+    # Get both open AND closed positions (status='entered' or 'exited')
+    # Closed positions will show with quantity=0
+    positions = StrategyExecution.query.filter(
+        StrategyExecution.strategy_id == strategy_id,
+        StrategyExecution.status.in_(['entered', 'exited'])
     ).join(TradingAccount).join(StrategyLeg).all()
 
     from app.utils.openalgo_client import ExtendedOpenAlgoAPI
@@ -1045,30 +1050,41 @@ def strategy_positions(strategy_id):
             # 'pending' is legacy (not valid OpenAlgo status) but kept for backward compatibility
             if hasattr(position, 'broker_order_status') and position.broker_order_status in ['rejected', 'cancelled', 'open', 'pending']:
                 continue
-        # Get current price for P&L calculation
-        try:
-            client = ExtendedOpenAlgoAPI(
-                api_key=position.account.get_api_key(),
-                host=position.account.host_url
-            )
-            quote = client.quotes(symbol=position.symbol, exchange=position.exchange)
-            ltp = float(quote.get('data', {}).get('ltp', position.entry_price))
-        except:
-            ltp = position.entry_price or 0
 
-        # Calculate P&L based on action
-        quantity = position.quantity
-        if position.leg.action == 'SELL':
-            quantity = -quantity  # Negative for sell positions
+        # Check if this is a closed position
+        is_closed = position.status == 'exited'
 
-        # Calculate P&L
-        if position.leg.action == 'BUY':
-            pnl = (ltp - (position.entry_price or 0)) * position.quantity
-        else:  # SELL
-            pnl = ((position.entry_price or 0) - ltp) * position.quantity
+        if is_closed:
+            # Closed position - show with quantity=0 and realized P&L
+            quantity = 0  # Show as 0 for closed positions
+            ltp = position.exit_price or position.entry_price or 0
+            pnl = position.realized_pnl or 0
+        else:
+            # Open position - calculate unrealized P&L
+            # Get current price for P&L calculation
+            try:
+                client = ExtendedOpenAlgoAPI(
+                    api_key=position.account.get_api_key(),
+                    host=position.account.host_url
+                )
+                quote = client.quotes(symbol=position.symbol, exchange=position.exchange)
+                ltp = float(quote.get('data', {}).get('ltp', position.entry_price))
+            except:
+                ltp = position.entry_price or 0
 
-        # Update unrealized P&L in database
-        position.unrealized_pnl = pnl
+            # Calculate P&L based on action
+            quantity = position.quantity
+            if position.leg.action == 'SELL':
+                quantity = -quantity  # Negative for sell positions
+
+            # Calculate P&L
+            if position.leg.action == 'BUY':
+                pnl = (ltp - (position.entry_price or 0)) * position.quantity
+            else:  # SELL
+                pnl = ((position.entry_price or 0) - ltp) * position.quantity
+
+            # Update unrealized P&L in database
+            position.unrealized_pnl = pnl
 
         data.append({
             'account_name': position.account.account_name if position.account else 'N/A',
@@ -1076,10 +1092,11 @@ def strategy_positions(strategy_id):
             'symbol': position.symbol,
             'exchange': position.exchange,
             'product': position.leg.product_type.upper() if position.leg.product_type else 'MIS',
-            'quantity': str(quantity),  # String format, negative for sell
+            'quantity': str(quantity),  # String format, 0 for closed, negative for sell if open
             'average_price': str(position.entry_price or 0.0),
             'ltp': str(ltp),
-            'pnl': str(round(pnl, 2))
+            'pnl': str(round(pnl, 2)),
+            'is_closed': is_closed  # Flag to indicate closed position
         })
 
     # Save unrealized P&L to database with error handling for database locks
