@@ -38,18 +38,39 @@ class Config:
     # CORS settings
     CORS_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:8000').split(',')
     
-    # Content Security Policy
+    # Content Security Policy Configuration
+    CSP_ENABLED = os.environ.get('CSP_ENABLED', 'FALSE').upper() == 'TRUE'
+    CSP_REPORT_ONLY = os.environ.get('CSP_REPORT_ONLY', 'FALSE').upper() == 'TRUE'
+
+    # Helper function to parse CSP directives from environment
+    @staticmethod
+    def parse_csp_directive(env_var, default):
+        """Parse CSP directive from environment variable into list format"""
+        value = os.environ.get(env_var, default)
+        # Split by space and filter out empty strings
+        return [item.strip() for item in value.split() if item.strip()]
+
+    # CSP Directives - read from environment with defaults
     CSP = {
-        'default-src': ["'self'"],
-        'script-src': ["'self'", "'unsafe-inline'", 'cdn.socket.io', 'cdn.jsdelivr.net'],
-        'style-src': ["'self'", "'unsafe-inline'", 'cdn.jsdelivr.net'],
-        'img-src': ["'self'", 'data:', 'https:'],
-        'font-src': ["'self'", 'data:', 'cdn.jsdelivr.net'],
-        'connect-src': ["'self'", 'ws:', 'wss:'],
-        'frame-ancestors': ["'none'"],
-        'form-action': ["'self'"],
-        'base-uri': ["'self'"]
+        'default-src': parse_csp_directive.__func__('CSP_DEFAULT_SRC', "'self'"),
+        'script-src': parse_csp_directive.__func__('CSP_SCRIPT_SRC', "'self' 'unsafe-inline' https://cdn.socket.io https://static.cloudflareinsights.com"),
+        'style-src': parse_csp_directive.__func__('CSP_STYLE_SRC', "'self' 'unsafe-inline'"),
+        'img-src': parse_csp_directive.__func__('CSP_IMG_SRC', "'self' data:"),
+        'connect-src': parse_csp_directive.__func__('CSP_CONNECT_SRC', "'self' wss: ws:"),
+        'font-src': parse_csp_directive.__func__('CSP_FONT_SRC', "'self'"),
+        'object-src': parse_csp_directive.__func__('CSP_OBJECT_SRC', "'none'"),
+        'media-src': parse_csp_directive.__func__('CSP_MEDIA_SRC', "'self' data:"),
+        'frame-src': parse_csp_directive.__func__('CSP_FRAME_SRC', "'self'"),
+        'form-action': parse_csp_directive.__func__('CSP_FORM_ACTION', "'self'"),
+        'frame-ancestors': parse_csp_directive.__func__('CSP_FRAME_ANCESTORS', "'self'"),
+        'base-uri': parse_csp_directive.__func__('CSP_BASE_URI', "'self'")
     }
+
+    # Upgrade insecure requests
+    CSP_UPGRADE_INSECURE_REQUESTS = os.environ.get('CSP_UPGRADE_INSECURE_REQUESTS', 'FALSE').upper() == 'TRUE'
+
+    # CSP Report URI (optional)
+    CSP_REPORT_URI = os.environ.get('CSP_REPORT_URI', '')
     
     # Rate limiting
     RATELIMIT_STORAGE_URL = os.environ.get('REDIS_URL') or 'memory://'

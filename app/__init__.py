@@ -149,24 +149,27 @@ def create_app(config_name=None):
          methods=['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
          allow_headers=['Content-Type', 'X-CSRFToken'])
     
-    # Setup CSP with Talisman (disabled in development for hot reload)
-    if not app.debug:
-        csp = {
-            'default-src': app.config['CSP']['default-src'],
-            'script-src': app.config['CSP']['script-src'],
-            'style-src': app.config['CSP']['style-src'],
-            'img-src': app.config['CSP']['img-src'],
-            'font-src': app.config['CSP']['font-src'],
-            'connect-src': app.config['CSP']['connect-src'],
-            'frame-ancestors': app.config['CSP']['frame-ancestors'],
-            'form-action': app.config['CSP']['form-action'],
-            'base-uri': app.config['CSP']['base-uri']
-        }
-        Talisman(app, 
-                force_https=True,
-                strict_transport_security=True,
+    # Setup CSP with Talisman (configurable via environment)
+    if app.config.get('CSP_ENABLED', False):
+        csp = app.config['CSP'].copy()
+
+        # Add upgrade-insecure-requests if enabled
+        if app.config.get('CSP_UPGRADE_INSECURE_REQUESTS', False):
+            csp['upgrade-insecure-requests'] = True
+
+        # Add report-uri if configured
+        if app.config.get('CSP_REPORT_URI'):
+            csp['report-uri'] = [app.config['CSP_REPORT_URI']]
+
+        # Determine if we should use report-only mode
+        report_only = app.config.get('CSP_REPORT_ONLY', False)
+
+        # Apply Talisman with CSP
+        Talisman(app,
+                force_https=(not app.debug),  # Only force HTTPS in production
+                strict_transport_security=(not app.debug),
                 content_security_policy=csp,
-                content_security_policy_nonce_in=['script-src', 'style-src'])
+                content_security_policy_report_only=report_only)
     
     # Setup logging
     setup_logging(app)
