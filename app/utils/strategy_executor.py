@@ -813,9 +813,18 @@ class StrategyExecutor:
             # Check strikes around ATM to find closest premium
             best_strike = atm_strike
             best_diff = float('inf')
+            best_premium = None
 
-            # Check +/- 10 strikes from ATM
-            for i in range(-10, 11):
+            # IMPROVED: Extended range from ±10 to ±20 strikes for better coverage
+            # NIFTY: Now checks ATM ± 1000 points instead of ±500
+            # BANKNIFTY: Now checks ATM ± 2000 points instead of ±1000
+            strikes_checked = 0
+            strikes_with_data = 0
+            premiums_found = []  # Track all premiums for debugging
+
+            logger.info(f"[PREMIUM SEARCH] Target premium: {target_premium}, ATM Strike: {atm_strike}, Strike step: {strike_step}")
+
+            for i in range(-20, 21):  # Extended range: ±20 strikes
                 strike = atm_strike + (i * strike_step)
 
                 # Build option symbol for this strike
@@ -830,25 +839,67 @@ class StrategyExecutor:
                     )
 
                     exchange = 'BFO' if leg.instrument == 'SENSEX' else 'NFO'
-                    response = client.quotes(symbol=symbol, exchange=exchange)
+                    strikes_checked += 1
 
-                    if response.get('status') == 'success':
-                        premium = response.get('data', {}).get('ltp', 0)
-                        diff = abs(premium - target_premium)
+                    try:
+                        response = client.quotes(symbol=symbol, exchange=exchange)
 
-                        if diff < best_diff:
-                            best_diff = diff
-                            best_strike = strike
+                        if response.get('status') == 'success':
+                            premium = response.get('data', {}).get('ltp', 0)
 
-                            # If we found exact match or very close, stop searching
-                            if diff < 5:
-                                break
+                            # Only consider strikes with premium > 0 (valid trading data)
+                            if premium > 0:
+                                strikes_with_data += 1
+                                diff = abs(premium - target_premium)
+                                premiums_found.append((strike, premium, diff))
 
-            logger.info(f"Found strike {best_strike} with premium closest to {target_premium}")
+                                logger.debug(f"[PREMIUM] Strike {strike}: Premium={premium:.2f}, Diff={diff:.2f}")
+
+                                if diff < best_diff:
+                                    best_diff = diff
+                                    best_strike = strike
+                                    best_premium = premium
+
+                                    # Only stop early if match is very close (within 2% or 2 points)
+                                    threshold = max(2, target_premium * 0.02)
+                                    if diff < threshold:
+                                        logger.info(f"[PREMIUM] Early exit: Found excellent match at strike {strike}")
+                                        break
+                        else:
+                            logger.debug(f"[PREMIUM] API call failed for strike {strike}: {response.get('message', 'Unknown error')}")
+
+                    except Exception as api_error:
+                        logger.debug(f"[PREMIUM] Exception fetching premium for strike {strike}: {api_error}")
+                        continue
+
+            # VALIDATION: Check if the found premium is acceptable
+            if best_premium is not None:
+                percent_diff = abs(best_premium - target_premium) / target_premium * 100
+
+                logger.info(f"[PREMIUM SEARCH RESULT] Checked {strikes_checked} strikes, found {strikes_with_data} with valid data")
+                logger.info(f"[PREMIUM SEARCH RESULT] Target: {target_premium}, Found: {best_premium} at strike {best_strike}")
+                logger.info(f"[PREMIUM SEARCH RESULT] Difference: {best_diff:.2f} ({percent_diff:.1f}%)")
+
+                # Log top 5 closest matches for debugging
+                if premiums_found:
+                    premiums_found.sort(key=lambda x: x[2])  # Sort by diff
+                    logger.info(f"[PREMIUM] Top 5 closest matches:")
+                    for strike, premium, diff in premiums_found[:5]:
+                        logger.info(f"  Strike {strike}: Premium {premium:.2f}, Diff {diff:.2f}")
+
+                # WARNING: If difference is too large (>30%), log warning
+                if percent_diff > 30:
+                    logger.warning(f"[PREMIUM WARNING] Best match is {percent_diff:.1f}% away from target!")
+                    logger.warning(f"[PREMIUM WARNING] Found premium {best_premium} vs target {target_premium}")
+                    logger.warning(f"[PREMIUM WARNING] Consider expanding search range or adjusting target premium")
+            else:
+                logger.error(f"[PREMIUM ERROR] No valid premium data found in {strikes_checked} strikes checked!")
+                logger.error(f"[PREMIUM ERROR] Returning ATM strike {atm_strike} as fallback")
+
             return str(best_strike)
 
         except Exception as e:
-            logger.error(f"Error finding strike by premium: {e}")
+            logger.error(f"Error finding strike by premium: {e}", exc_info=True)
             return str(atm_strike)
 
     def _calculate_quantity(self, leg: StrategyLeg, num_accounts: int, account: TradingAccount = None) -> int:
