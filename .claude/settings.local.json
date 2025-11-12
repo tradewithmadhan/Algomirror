@@ -25,7 +25,8 @@
       "Bash(python:*)",
       "Bash(npm run build-css:*)",
       "Bash(npm install)",
-      "Bash(.venvScriptspython.exe app.py)"
+      "Bash(.venvScriptspython.exe app.py)",
+      "Bash(Select-Object -Last 100)"
     ],
     "deny": [],
     "ask": []

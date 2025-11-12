@@ -2,6 +2,15 @@
 
 {% block title %}Account Positions - AlgoMirror{% endblock %}
 
+{% block head %}
+<style>
+/* Full width modal for strategy details */
+.modal-box {
+    max-width: none !important;
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container mx-auto px-4 py-6">
     <!-- Header -->
@@ -210,7 +219,7 @@
 {% for account in accounts %}
     {% for strategy in account.strategies %}
     <dialog id="strategyDetailsModal{{ account.id }}_{{ strategy.id }}" class="modal">
-        <div class="modal-box max-w-4xl">
+        <div class="modal-box !w-[90vw] !max-w-[90vw]">
             <form method="dialog">
                 <button class="btn btn-sm btn-circle btn-ghost absolute right-2 top-2">✕</button>
             </form>
@@ -236,33 +245,51 @@
             </div>
 
             <!-- Positions Table -->
-            <div class="overflow-x-auto">
-                <table class="table table-zebra">
+            <div class="w-full">
+                <table class="table table-zebra w-full">
                     <thead>
                         <tr>
-                            <th>Symbol</th>
-                            <th>Exchange</th>
-                            <th class="text-right">Quantity</th>
-                            <th class="text-right">Entry Price</th>
-                            <th>Entry Time</th>
-                            <th class="text-right">Total P&L</th>
+                            <th class="whitespace-nowrap">Symbol</th>
+                            <th class="whitespace-nowrap">Type</th>
+                            <th class="whitespace-nowrap">Action</th>
+                            <th class="text-right whitespace-nowrap">Quantity</th>
+                            <th class="text-right whitespace-nowrap">Entry Price</th>
+                            <th class="whitespace-nowrap">Entry Time</th>
+                            <th class="text-right whitespace-nowrap">Total P&L</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for execution in strategy.executions %}
+                        {% set symbol_upper = execution.symbol.upper() %}
+                        {% if symbol_upper.endswith('CE') %}
+                            {% set instrument_type = 'CE' %}
+                            {% set type_badge_class = 'badge-success' %}
+                        {% elif symbol_upper.endswith('PE') %}
+                            {% set instrument_type = 'PE' %}
+                            {% set type_badge_class = 'badge-error' %}
+                        {% elif symbol_upper.endswith('FUT') %}
+                            {% set instrument_type = 'FUT' %}
+                            {% set type_badge_class = 'badge-info' %}
+                        {% else %}
+                            {% set instrument_type = '-' %}
+                            {% set type_badge_class = 'badge-ghost' %}
+                        {% endif %}
+                        {% set action = execution.leg.action if execution.leg else 'BUY' %}
+                        {% set action_badge_class = 'badge-success' if action == 'BUY' else 'badge-error' %}
                         <tr>
-                            <td class="font-mono font-bold">{{ execution.symbol }}</td>
-                            <td><span class="badge badge-outline badge-xs">{{ execution.exchange }}</span></td>
-                            <td class="text-right">{{ execution.quantity }}</td>
-                            <td class="text-right">₹{{ "%.2f"|format(execution.entry_price) }}</td>
-                            <td class="text-sm">
+                            <td class="font-mono whitespace-nowrap">{{ execution.symbol }}</td>
+                            <td class="whitespace-nowrap"><span class="badge {{ type_badge_class }} badge-sm">{{ instrument_type }}</span></td>
+                            <td class="whitespace-nowrap"><span class="badge {{ action_badge_class }} badge-sm">{{ action }}</span></td>
+                            <td class="text-right whitespace-nowrap">{{ execution.quantity }}</td>
+                            <td class="text-right whitespace-nowrap">₹{{ "%.2f"|format(execution.entry_price) }}</td>
+                            <td class="whitespace-nowrap">
                                 {% if execution.entry_time %}
                                 {{ execution.entry_time.strftime('%d %b %Y, %H:%M') }}
                                 {% else %}
                                 -
                                 {% endif %}
                             </td>
-                            <td class="text-right font-bold {% if execution.unrealized_pnl >= 0 %}text-success{% else %}text-error{% endif %}">
+                            <td class="text-right font-bold whitespace-nowrap {% if execution.unrealized_pnl >= 0 %}text-success{% else %}text-error{% endif %}">
                                 {% if execution.unrealized_pnl >= 0 %}+{% endif %}₹{{ "%.2f"|format(execution.unrealized_pnl) }}
                             </td>
                         </tr>

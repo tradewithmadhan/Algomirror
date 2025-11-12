@@ -35,6 +35,13 @@
                 </svg>
                 Refresh
             </button>
+
+            <button onclick="exportToCSV('orderbook')" class="btn btn-success btn-sm h-9">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export CSV
+            </button>
         </div>
     </div>
 
@@ -163,4 +170,55 @@
     </div>
     {% endif %}
 </div>
+
+<script>
+function exportToCSV(type) {
+    // Get the table
+    const table = document.querySelector('table');
+    if (!table) {
+        alert('No data to export');
+        return;
+    }
+
+    // Convert table to CSV
+    let csv = [];
+    const rows = table.querySelectorAll('tr');
+
+    for (let i = 0; i < rows.length; i++) {
+        const row = [];
+        const cols = rows[i].querySelectorAll('td, th');
+
+        for (let j = 0; j < cols.length; j++) {
+            // Get text content and clean it
+            let data = cols[j].innerText.replace(/(\r\n|\n|\r)/gm, '').trim();
+            // Remove rupee symbol
+            data = data.replace(/₹/g, '');
+            // Escape quotes
+            data = data.replace(/"/g, '""');
+            // Add quotes if contains comma
+            if (data.indexOf(',') > -1) {
+                data = '"' + data + '"';
+            }
+            row.push(data);
+        }
+
+        csv.push(row.join(','));
+    }
+
+    // Create CSV file and download
+    const csvString = csv.join('\n');
+    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${type}_${timestamp}.csv`);
+    link.style.visibility = 'hidden';
+
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+</script>
 {% endblock %}

@@ -171,12 +171,13 @@
                         <label class="label">
                             <span class="label-text">Select Accounts</span>
                         </label>
-                        <div class="space-y-2">
+                        <div class="space-y-2" id="accounts-container">
                             {% for account in accounts %}
                             <label class="label cursor-pointer justify-start">
                                 <input type="checkbox" class="checkbox checkbox-primary mr-3"
                                        name="accounts" value="{{ account.id }}"
-                                       {% if strategy and strategy.selected_accounts and account.id in strategy.selected_accounts %}checked{% endif %}>
+                                       {% if strategy and strategy.selected_accounts and account.id in strategy.selected_accounts %}checked{% endif %}
+                                       id="account-checkbox-{{ account.id }}">
                                 <span>{{ account.account_name }} ({{ account.broker_name }})</span>
                             </label>
                             {% endfor %}
@@ -1137,6 +1138,8 @@ function startStatusPolling() {
                         legItem.dataset.isPending = 'false';
                         legItem.dataset.isExecuted = 'true';
                         showNotification(`Leg ${legNumber} order filled`, 'success');
+                        // Freeze account selection when any leg is executed
+                        freezeAccountsIfExecuted();
                     } else if (allFailed) {
                         // Unfreeze the leg
                         console.log(`Leg ${legNumber} orders failed, unfreezing`);
@@ -1216,6 +1219,8 @@ async function checkAndFreezePendingLegs() {
                     // All complete - freeze completely
                     console.log(`Leg ${legNumber} is fully executed`);
                     freezeLeg(legItem, true, false);
+                    // Freeze account selection when any leg is executed
+                    freezeAccountsIfExecuted();
                 } else if (allFailed) {
                     // All failed - unfreeze
                     console.log(`Leg ${legNumber} orders failed, keeping unfrozen`);
@@ -1488,6 +1493,7 @@ function saveStrategy(execute = false) {
                             loadStrategyData(); // Reload orderbook/tradebook/positions
                             checkAndFreezePendingLegs(); // Check and freeze pending legs
                             startStatusPolling(); // Start 5-second polling
+                            freezeAccountsIfExecuted(); // Freeze account selection after execution
                         }, 1000);
 
                         // Stay on the same page - no redirect
@@ -1687,7 +1693,37 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // Set initial lot field state based on risk profile
     toggleLotFields();
+
+    // Freeze account checkboxes if any leg is executed
+    freezeAccountsIfExecuted();
 });
+
+// Freeze account selection if any leg has been executed
+function freezeAccountsIfExecuted() {
+    const hasExecutedLeg = document.querySelector('.leg-frozen');
+
+    if (hasExecutedLeg) {
+        const accountCheckboxes = document.querySelectorAll('input[name="accounts"]');
+        accountCheckboxes.forEach(checkbox => {
+            checkbox.disabled = true;
+            checkbox.classList.add('cursor-not-allowed');
+        });
+
+        // Add visual indicator
+        const accountsContainer = document.getElementById('accounts-container');
+        if (accountsContainer && !accountsContainer.querySelector('.frozen-notice')) {
+            const notice = document.createElement('div');
+            notice.className = 'frozen-notice alert alert-info alert-sm mt-2';
+            notice.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <span>Account selection is locked after order execution to prevent confusion</span>
+            `;
+            accountsContainer.parentElement.appendChild(notice);
+        }
+    }
+}
 
 // Strategy-level execution tracking functions
 function showStrategyTab(tabName, element) {
