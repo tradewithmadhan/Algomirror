@@ -1,0 +1,336 @@
+{% extends "layout.html" %}
+
+{% block title %}WebSocket Monitor - AlgoMirror{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+    <!-- Header -->
+    <div class="flex justify-between items-center mb-6">
+        <div>
+            <h1 class="text-3xl font-bold">WebSocket Monitor</h1>
+            <p class="text-base-content/70 mt-1">Real-time WebSocket connection status and subscriptions</p>
+        </div>
+        <div class="flex gap-3 items-center">
+            <!-- Auto-refresh indicator -->
+            <div class="badge badge-ghost gap-2">
+                <span class="loading loading-spinner loading-xs"></span>
+                <span>Auto-refresh: 3s</span>
+            </div>
+
+            <!-- Manual Refresh Button -->
+            <button onclick="refreshStatus()" class="btn btn-ghost btn-sm" title="Refresh status manually">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+            </button>
+
+            <!-- Back to Dashboard -->
+            <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary btn-sm">
+                <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path>
+                </svg>
+                Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Connection Status Card -->
+    <div class="card bg-base-100 shadow-lg mb-6">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Connection Status</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <!-- Status -->
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Status</div>
+                    <div class="stat-value text-2xl" id="ws-status">
+                        <span class="loading loading-spinner"></span>
+                    </div>
+                    <div class="stat-desc" id="ws-status-desc">Checking...</div>
+                </div>
+
+                <!-- Connected -->
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Connected</div>
+                    <div class="stat-value text-2xl" id="ws-connected">
+                        <span class="loading loading-spinner"></span>
+                    </div>
+                    <div class="stat-desc">WebSocket connection</div>
+                </div>
+
+                <!-- Authenticated -->
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Authenticated</div>
+                    <div class="stat-value text-2xl" id="ws-authenticated">
+                        <span class="loading loading-spinner"></span>
+                    </div>
+                    <div class="stat-desc">API authentication</div>
+                </div>
+
+                <!-- Subscriptions -->
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Subscriptions</div>
+                    <div class="stat-value text-2xl" id="subscription-count">
+                        <span class="loading loading-spinner"></span>
+                    </div>
+                    <div class="stat-desc">Active subscriptions</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Current Account Card -->
+    <div class="card bg-base-100 shadow-lg mb-6" id="current-account-card" style="display: none;">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Current Connection</h2>
+
+            <div class="space-y-3">
+                <div class="flex justify-between items-center">
+                    <span class="font-medium">Account Name:</span>
+                    <span id="current-account-name" class="badge badge-primary">N/A</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="font-medium">Broker:</span>
+                    <span id="current-account-broker" class="badge badge-secondary">N/A</span>
+                </div>
+                <div class="flex justify-between items-center">
+                    <span class="font-medium">WebSocket URL:</span>
+                    <code id="current-account-url" class="text-sm">N/A</code>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Metrics Card -->
+    <div class="card bg-base-100 shadow-lg mb-6" id="metrics-card" style="display: none;">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Performance Metrics</h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Messages Received</div>
+                    <div class="stat-value text-xl" id="messages-received">0</div>
+                </div>
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Messages Dropped</div>
+                    <div class="stat-value text-xl" id="messages-dropped">0</div>
+                </div>
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Reconnect Count</div>
+                    <div class="stat-value text-xl" id="reconnect-count">0</div>
+                </div>
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Account Switches</div>
+                    <div class="stat-value text-xl" id="account-switches">0</div>
+                </div>
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Total Failures</div>
+                    <div class="stat-value text-xl" id="total-failures">0</div>
+                </div>
+                <div class="stat bg-base-200 rounded-lg p-4">
+                    <div class="stat-title">Last Message</div>
+                    <div class="stat-value text-sm" id="last-message-time">Never</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscriptions List Card -->
+    <div class="card bg-base-100 shadow-lg mb-6">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Active Subscriptions</h2>
+
+            <div id="subscriptions-container">
+                <div class="flex justify-center py-8">
+                    <span class="loading loading-spinner loading-lg"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Accounts Card -->
+    <div class="card bg-base-100 shadow-lg mb-6" id="backup-accounts-card" style="display: none;">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Backup Accounts</h2>
+
+            <div id="backup-accounts-container" class="space-y-2">
+                <!-- Populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Failover History Card -->
+    <div class="card bg-base-100 shadow-lg mb-6" id="failover-history-card" style="display: none;">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Failover History</h2>
+
+            <div id="failover-history-container">
+                <p class="text-center text-base-content/60 py-4">No failover events recorded</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let refreshInterval;
+
+// Format timestamp
+function formatTimestamp(isoString) {
+    if (!isoString) return 'Never';
+    const date = new Date(isoString);
+    return date.toLocaleString();
+}
+
+// Format relative time
+function formatRelativeTime(isoString) {
+    if (!isoString) return 'Never';
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffSec = Math.floor(diffMs / 1000);
+
+    if (diffSec < 60) return `${diffSec}s ago`;
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+}
+
+// Update status badge
+function updateStatusBadge(status, connected, authenticated) {
+    const statusEl = document.getElementById('ws-status');
+    const statusDescEl = document.getElementById('ws-status-desc');
+
+    if (connected && authenticated) {
+        statusEl.innerHTML = '<span class="text-success">●</span> Active';
+        statusDescEl.textContent = 'Connected & Authenticated';
+    } else if (connected) {
+        statusEl.innerHTML = '<span class="text-warning">●</span> Connecting';
+        statusDescEl.textContent = 'Awaiting authentication';
+    } else {
+        statusEl.innerHTML = '<span class="text-error">●</span> Inactive';
+        statusDescEl.textContent = 'Not connected';
+    }
+}
+
+// Refresh WebSocket status
+async function refreshStatus() {
+    try {
+        const response = await fetch('{{ url_for("main.websocket_status") }}');
+        const data = await response.json();
+
+        // Update connection status
+        updateStatusBadge(data.status, data.connected, data.authenticated);
+
+        document.getElementById('ws-connected').textContent = data.connected ? 'Yes' : 'No';
+        document.getElementById('ws-authenticated').textContent = data.authenticated ? 'Yes' : 'No';
+        document.getElementById('subscription-count').textContent = data.subscriptions.count;
+
+        // Update current account
+        if (data.connection_details && data.connection_details.current_account) {
+            const account = data.connection_details.current_account;
+            document.getElementById('current-account-card').style.display = 'block';
+            document.getElementById('current-account-name').textContent = account.name;
+            document.getElementById('current-account-broker').textContent = account.broker;
+            document.getElementById('current-account-url').textContent = account.websocket_url;
+        }
+
+        // Update metrics
+        if (data.metrics && Object.keys(data.metrics).length > 0) {
+            document.getElementById('metrics-card').style.display = 'block';
+            document.getElementById('messages-received').textContent = data.metrics.messages_received || 0;
+            document.getElementById('messages-dropped').textContent = data.metrics.messages_dropped || 0;
+            document.getElementById('reconnect-count').textContent = data.metrics.reconnect_count || 0;
+            document.getElementById('account-switches').textContent = data.metrics.account_switches || 0;
+            document.getElementById('total-failures').textContent = data.metrics.total_failures || 0;
+            document.getElementById('last-message-time').textContent = formatRelativeTime(data.metrics.last_message_time);
+        }
+
+        // Update subscriptions list
+        const subsContainer = document.getElementById('subscriptions-container');
+        if (data.subscriptions.count > 0) {
+            let html = '<div class="overflow-x-auto"><table class="table table-zebra w-full">';
+            html += '<thead><tr><th>Symbol</th><th>Exchange</th><th>Mode</th></tr></thead><tbody>';
+
+            data.subscriptions.list.forEach(sub => {
+                const modeBadge = sub.mode === 'depth' ? 'badge-accent' :
+                                 sub.mode === 'quote' ? 'badge-secondary' : 'badge-primary';
+                html += `<tr>
+                    <td><code>${sub.symbol}</code></td>
+                    <td><span class="badge badge-ghost">${sub.exchange}</span></td>
+                    <td><span class="badge ${modeBadge}">${sub.mode.toUpperCase()}</span></td>
+                </tr>`;
+            });
+
+            html += '</tbody></table></div>';
+            subsContainer.innerHTML = html;
+        } else {
+            subsContainer.innerHTML = '<p class="text-center text-base-content/60 py-4">No active subscriptions</p>';
+        }
+
+        // Update backup accounts
+        if (data.connection_details && data.connection_details.backup_accounts && data.connection_details.backup_accounts.length > 0) {
+            document.getElementById('backup-accounts-card').style.display = 'block';
+            const backupContainer = document.getElementById('backup-accounts-container');
+            let html = '';
+
+            data.connection_details.backup_accounts.forEach((account, index) => {
+                html += `<div class="alert alert-info">
+                    <div class="flex items-center gap-2">
+                        <span class="badge badge-neutral">${index + 1}</span>
+                        <div>
+                            <div class="font-semibold">${account.name}</div>
+                            <div class="text-xs">${account.broker} - ${account.websocket_url}</div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+
+            backupContainer.innerHTML = html;
+        }
+
+        // Update failover history
+        if (data.connection_details && data.connection_details.failover_history && data.connection_details.failover_history.length > 0) {
+            document.getElementById('failover-history-card').style.display = 'block';
+            const historyContainer = document.getElementById('failover-history-container');
+            let html = '<div class="timeline timeline-vertical">';
+
+            data.connection_details.failover_history.forEach((event, index) => {
+                html += `<div class="timeline-item">
+                    <div class="timeline-start">${formatTimestamp(event.timestamp)}</div>
+                    <div class="timeline-middle">
+                        <svg class="w-5 h-5 text-warning" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path>
+                        </svg>
+                    </div>
+                    <div class="timeline-end timeline-box">
+                        <div class="font-semibold">Failover from ${event.from_account} to ${event.to_account}</div>
+                        <div class="text-sm text-base-content/60">${event.reason}</div>
+                    </div>
+                </div>`;
+            });
+
+            html += '</div>';
+            historyContainer.innerHTML = html;
+        }
+
+    } catch (error) {
+        console.error('Error fetching WebSocket status:', error);
+        document.getElementById('ws-status').innerHTML = '<span class="text-error">●</span> Error';
+        document.getElementById('ws-status-desc').textContent = 'Failed to fetch status';
+    }
+}
+
+// Start auto-refresh on page load
+document.addEventListener('DOMContentLoaded', function() {
+    refreshStatus();
+    refreshInterval = setInterval(refreshStatus, 3000); // Refresh every 3 seconds
+});
+
+// Clean up interval on page unload
+window.addEventListener('beforeunload', function() {
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+</script>
+{% endblock %}

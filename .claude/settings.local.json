@@ -24,7 +24,8 @@
       "Bash(timeout /t 5)",
       "Bash(python:*)",
       "Bash(npm run build-css:*)",
-      "Bash(npm install)"
+      "Bash(npm install)",
+      "Bash(.venvScriptspython.exe app.py)"
     ],
     "deny": [],
     "ask": []

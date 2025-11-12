@@ -156,13 +156,14 @@
         </div>
     </div>
 </dialog>
+{% endblock %}
 
 {% block head %}
 <style>
     .animate-pulse {
         animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
     }
-    
+
     @keyframes pulse {
         0%, 100% {
             opacity: 1;
@@ -172,7 +173,6 @@
         }
     }
 </style>
-{% endblock %}
 
 <script>
 let deleteAccountId = null;
@@ -180,11 +180,11 @@ let deleteAccountId = null;
 function testConnection(accountId) {
     const card = event.target.closest('.card');
     const statusBadge = card.querySelector('.badge');
-    
+
     // Show loading state
     statusBadge.textContent = 'testing...';
     statusBadge.className = 'badge badge-warning animate-pulse';
-    
+
     fetchWithCSRF(`/accounts/test-connection/${accountId}`)
         .then(response => response.json())
         .then(data => {
@@ -192,7 +192,7 @@ function testConnection(accountId) {
                 statusBadge.textContent = 'connected';
                 statusBadge.className = 'badge badge-success';
                 showToast('Connection test successful!', 'success');
-                
+
                 // Refresh the page to update data
                 setTimeout(() => location.reload(), 1000);
             } else {
@@ -210,7 +210,7 @@ function testConnection(accountId) {
 
 function refreshData(accountId) {
     showToast('Refreshing account data...', 'info');
-    
+
     fetchWithCSRF(`/accounts/refresh-data/${accountId}`)
         .then(response => response.json())
         .then(data => {
@@ -232,20 +232,28 @@ function deleteAccount(accountId, accountName) {
     document.getElementById('delete-modal').showModal();
 }
 
-document.getElementById('confirm-delete').addEventListener('click', function() {
-    if (deleteAccountId) {
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `/accounts/delete/${deleteAccountId}`;
-        
-        const csrfToken = document.createElement('input');
-        csrfToken.type = 'hidden';
-        csrfToken.name = 'csrf_token';
-        csrfToken.value = getCSRFToken();
-        form.appendChild(csrfToken);
-        
-        document.body.appendChild(form);
-        form.submit();
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmDeleteBtn = document.getElementById('confirm-delete');
+    if (confirmDeleteBtn) {
+        confirmDeleteBtn.addEventListener('click', function() {
+            if (deleteAccountId) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = `/accounts/delete/${deleteAccountId}`;
+
+                const csrfToken = document.createElement('input');
+                csrfToken.type = 'hidden';
+                csrfToken.name = 'csrf_token';
+                csrfToken.value = getCSRFToken();
+                form.appendChild(csrfToken);
+
+                // Close the modal before submitting
+                document.getElementById('delete-modal').close();
+
+                document.body.appendChild(form);
+                form.submit();
+            }
+        });
     }
 });
 </script>

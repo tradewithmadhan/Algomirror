@@ -6,6 +6,7 @@ from openalgo import api
 from datetime import datetime
 from sqlalchemy import desc
 from app import db
+import json
 
 @main_bp.route('/')
 def index():
@@ -110,6 +111,28 @@ def dashboard():
                         'positions': open_positions_count
                     })
 
+    # Calculate overall summary statistics
+    total_active_accounts = len(accounts)
+
+    # Count strategies with non-zero open positions
+    strategies_with_positions = 0
+    for strategy in strategies:
+        open_positions_count = StrategyExecution.query.filter_by(
+            strategy_id=strategy.id,
+            status='entered'
+        ).count()
+        if open_positions_count > 0:
+            strategies_with_positions += 1
+
+    # Calculate total available cash across all accounts (will be updated via API in frontend)
+    # These are placeholders for the frontend to populate
+    overall_stats = {
+        'total_active_accounts': total_active_accounts,
+        'total_strategies': strategies_with_positions,  # Only count strategies with open positions
+        'total_available_cash': 0,  # Will be calculated client-side
+        'total_m2m_pnl': 0  # Will be calculated client-side
+    }
+
     current_app.logger.info(
         f'Dashboard accessed by user {current_user.username}',
         extra={
@@ -127,7 +150,8 @@ def dashboard():
                          accounts_json=accounts_data,
                          today_pnl=today_pnl,
                          active_strategies=len(active_strategies),
-                         account_strategies=account_strategies)
+                         account_strategies=account_strategies,
+                         overall_stats=overall_stats)
 
 @main_bp.route('/account-positions')
 @login_required
@@ -357,4 +381,96 @@ def close_account_positions(account_id):
             'status': 'error',
             'message': f'Failed to close any positions. {failed_count} error(s)',
             'errors': errors[:5]
+        }), 500
+
+@main_bp.route('/websocket-monitor')
+@login_required
+def websocket_monitor():
+    """WebSocket monitor page showing active connections and subscriptions"""
+    current_app.logger.info(
+        f'WebSocket monitor accessed by user {current_user.username}',
+        extra={
+            'event': 'websocket_monitor_access',
+            'user_id': current_user.id
+        }
+    )
+
+    return render_template('main/websocket_monitor.html')
+
+@main_bp.route('/api/websocket-status')
+@login_required
+def websocket_status():
+    """API endpoint to get current WebSocket status"""
+    from app.utils.background_service import option_chain_service
+
+    try:
+        websocket_manager = option_chain_service.shared_websocket_manager
+
+        if not websocket_manager:
+            return jsonify({
+                'status': 'not_initialized',
+                'message': 'WebSocket manager not initialized'
+            })
+
+        # Get basic status
+        ws_status = websocket_manager.get_status()
+
+        # Get detailed subscription information
+        subscriptions_list = []
+        for sub_str in websocket_manager.subscriptions:
+            try:
+                subscription = json.loads(sub_str)
+                subscriptions_list.append({
+                    'symbol': subscription.get('symbol', 'N/A'),
+                    'exchange': subscription.get('exchange', 'N/A'),
+                    'mode': subscription.get('mode', 'ltp')
+                })
+            except:
+                continue
+
+        # Get connection pool details
+        connection_details = None
+        if websocket_manager.connection_pool:
+            current_account = websocket_manager.connection_pool.get('current_account')
+            backup_accounts = websocket_manager.connection_pool.get('backup_accounts', [])
+
+            connection_details = {
+                'current_account': {
+                    'name': getattr(current_account, 'account_name', 'Unknown'),
+                    'broker': getattr(current_account, 'broker_name', 'Unknown'),
+                    'websocket_url': getattr(current_account, 'websocket_url', 'N/A')
+                },
+                'backup_accounts': [
+                    {
+                        'name': getattr(acc, 'account_name', 'Unknown'),
+                        'broker': getattr(acc, 'broker_name', 'Unknown'),
+                        'websocket_url': getattr(acc, 'websocket_url', 'N/A')
+                    }
+                    for acc in backup_accounts
+                ],
+                'failover_history': websocket_manager.connection_pool.get('failover_history', [])
+            }
+
+        # Build comprehensive response
+        response = {
+            'status': ws_status.get('status', 'unknown'),
+            'connected': ws_status.get('connected', False),
+            'authenticated': websocket_manager.authenticated if hasattr(websocket_manager, 'authenticated') else False,
+            'active': websocket_manager.active if hasattr(websocket_manager, 'active') else False,
+            'subscriptions': {
+                'count': len(subscriptions_list),
+                'list': subscriptions_list
+            },
+            'connection_details': connection_details,
+            'metrics': ws_status.get('metrics', {}),
+            'timestamp': datetime.utcnow().isoformat()
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        current_app.logger.error(f'Error getting WebSocket status: {e}')
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
         }), 500

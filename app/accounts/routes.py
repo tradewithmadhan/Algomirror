@@ -218,33 +218,56 @@ def edit(account_id):
 @login_required
 def delete(account_id):
     account = TradingAccount.query.filter_by(
-        id=account_id, 
+        id=account_id,
         user_id=current_user.id
     ).first_or_404()
-    
+
     try:
         account_name = account.account_name
         was_primary = account.is_primary
-        
+
         log_activity('account_deleted', {
             'account_name': account_name
         }, account.id)
-        
+
         # If deleting primary account, notify background service
         if was_primary:
             option_chain_service.on_account_disconnected(account)
             current_app.logger.info(f'Notified option chain service of primary account deletion: {account_name}')
-        
+
+        # Delete all related records first to avoid foreign key constraint errors
+        # Import models needed for deletion
+        from app.models import Order, Position, Holding, StrategyExecution, MarginTracker, ActivityLog
+
+        # Delete orders
+        Order.query.filter_by(account_id=account_id).delete()
+
+        # Delete positions
+        Position.query.filter_by(account_id=account_id).delete()
+
+        # Delete holdings
+        Holding.query.filter_by(account_id=account_id).delete()
+
+        # Delete strategy executions
+        StrategyExecution.query.filter_by(account_id=account_id).delete()
+
+        # Delete margin trackers
+        MarginTracker.query.filter_by(account_id=account_id).delete()
+
+        # Set account_id to NULL in activity logs (nullable=True)
+        ActivityLog.query.filter_by(account_id=account_id).update({'account_id': None})
+
+        # Finally delete the account
         db.session.delete(account)
         db.session.commit()
-        
+
         flash(f'Account "{account_name}" deleted successfully!', 'success')
-        
+
     except Exception as e:
         db.session.rollback()
         current_app.logger.error(f'Failed to delete account: {str(e)}')
         flash('Failed to delete account. Please try again.', 'error')
-    
+
     return redirect(url_for('accounts.manage'))
 
 @accounts_bp.route('/test-connection/<int:account_id>')

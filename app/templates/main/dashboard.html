@@ -41,6 +41,57 @@
         </div>
     </div>
 
+    <!-- Overall Summary Stats -->
+    <div class="stats stats-vertical lg:stats-horizontal shadow w-full mb-6 bg-base-100">
+        <div class="stat">
+            <div class="stat-figure text-primary">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Active Accounts</div>
+            <div class="stat-value text-primary">{{ overall_stats.total_active_accounts }}</div>
+            <div class="stat-desc">Trading accounts with margin tracking</div>
+        </div>
+
+        <div class="stat">
+            <div class="stat-figure text-secondary">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Total Available Cash</div>
+            <div class="stat-value text-secondary text-2xl lg:text-4xl" id="total-available-cash">
+                <span class="loading loading-spinner loading-md"></span>
+            </div>
+            <div class="stat-desc">Combined cash across all accounts</div>
+        </div>
+
+        <div class="stat">
+            <div class="stat-figure">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Total M2M P&L</div>
+            <div class="stat-value text-2xl lg:text-4xl" id="total-m2m-pnl">
+                <span class="loading loading-spinner loading-md"></span>
+            </div>
+            <div class="stat-desc">Realized + Unrealized P&L</div>
+        </div>
+
+        <div class="stat">
+            <div class="stat-figure text-accent">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                </svg>
+            </div>
+            <div class="stat-title">Total Strategies</div>
+            <div class="stat-value text-accent">{{ overall_stats.total_strategies }}</div>
+            <div class="stat-desc">Strategies with open positions</div>
+        </div>
+    </div>
+
     <!-- Account Cards Grid -->
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
         {% for account in accounts %}
@@ -474,6 +525,7 @@ async function confirmClosePositions() {
 // Load account funds data
 async function loadAccountFunds() {
     const accounts = {{ accounts_json|tojson }};
+    let totalAvailableCash = 0;
 
     for (const account of accounts) {
         try {
@@ -487,6 +539,7 @@ async function loadAccountFunds() {
                 if (availableEl) {
                     const available = parseFloat(funds.availablecash) || 0;
                     availableEl.textContent = `₹${available.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+                    totalAvailableCash += available;
                 }
 
                 const marginEl = document.getElementById(`margin-${account.id}`);
@@ -521,11 +574,18 @@ async function loadAccountFunds() {
             if (collateralEl) collateralEl.textContent = 'Error';
         }
     }
+
+    // Update total available cash
+    const totalCashEl = document.getElementById('total-available-cash');
+    if (totalCashEl) {
+        totalCashEl.textContent = `₹ ${totalAvailableCash.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+    }
 }
 
 // Load account P&L data (realized + unrealized)
 async function loadAccountPnL() {
     const accounts = {{ accounts_json|tojson }};
+    let totalM2MPnL = 0;
 
     for (const account of accounts) {
         try {
@@ -542,6 +602,7 @@ async function loadAccountPnL() {
                     const colorClass = totalPnl >= 0 ? 'text-success' : 'text-error';
                     pnlEl.textContent = `${sign}₹${totalPnl.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
                     pnlEl.className = `font-bold ${colorClass}`;
+                    totalM2MPnL += totalPnl;
                 }
 
                 // Active Strategies section now displays static strategy names from server
@@ -562,6 +623,15 @@ async function loadAccountPnL() {
                 pnlEl.className = 'font-bold text-error';
             }
         }
+    }
+
+    // Update total M2M P&L
+    const totalPnlEl = document.getElementById('total-m2m-pnl');
+    if (totalPnlEl) {
+        const sign = totalM2MPnL >= 0 ? '' : '';
+        const colorClass = totalM2MPnL >= 0 ? 'text-success' : 'text-error';
+        totalPnlEl.textContent = `₹ ${sign}${totalM2MPnL.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        totalPnlEl.className = `stat-value ${colorClass}`;
     }
 }
 
