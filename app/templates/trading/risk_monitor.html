@@ -197,8 +197,14 @@
                                 <td class="{{ 'text-success' if (execution.unrealized_pnl or 0) >= 0 else 'text-error' }}" id="pnl-{{ execution.id }}">
                                     {{ "%.2f"|format(execution.unrealized_pnl or 0) }}
                                 </td>
-                                <td>
-                                    {% if execution.websocket_subscribed %}
+                                <td id="status-{{ execution.id }}">
+                                    {% if execution.status == 'exited' %}
+                                    <span class="badge badge-neutral badge-xs">Exited</span>
+                                    {% elif execution.status == 'exit_pending' %}
+                                    <span class="badge badge-warning badge-xs animate-pulse">
+                                        {{ (execution.exit_reason or 'closing')|upper }}
+                                    </span>
+                                    {% elif execution.websocket_subscribed %}
                                     <span class="badge badge-success badge-xs">Live</span>
                                     {% else %}
                                     <span class="badge badge-ghost badge-xs">Offline</span>
@@ -377,6 +383,7 @@ function updateRiskData(data) {
             const slDistEl = document.getElementById(`slDist-${execution.id}`);
             const tpPriceEl = document.getElementById(`tpPrice-${execution.id}`);
             const tpDistEl = document.getElementById(`tpDist-${execution.id}`);
+            const statusEl = document.getElementById(`status-${execution.id}`);
 
             if (ltpEl && execution.last_price) {
                 const oldValue = parseFloat(ltpEl.textContent);
@@ -417,6 +424,20 @@ function updateRiskData(data) {
                     ? `${execution.tp_distance.toFixed(1)} pts`
                     : `<span class="text-success font-bold">HIT!</span>`;
                 tpDistEl.innerHTML = `<span class="text-xs ${execution.tp_hit ? 'text-success font-bold' : ''}">${distText}</span>`;
+            }
+
+            // Update status based on execution state
+            if (statusEl) {
+                if (execution.status === 'exited') {
+                    statusEl.innerHTML = '<span class="badge badge-neutral badge-xs">Exited</span>';
+                } else if (execution.status === 'exit_pending') {
+                    const reason = (execution.exit_reason || 'closing').toUpperCase();
+                    statusEl.innerHTML = `<span class="badge badge-warning badge-xs animate-pulse">${reason}</span>`;
+                } else if (execution.websocket_subscribed) {
+                    statusEl.innerHTML = '<span class="badge badge-success badge-xs">Live</span>';
+                } else {
+                    statusEl.innerHTML = '<span class="badge badge-ghost badge-xs">Offline</span>';
+                }
             }
         });
     });

@@ -403,20 +403,16 @@ class RiskManager:
                     # Reverse transaction type for exit
                     exit_transaction = 'SELL' if execution.transaction_type.upper() == 'BUY' else 'BUY'
 
-                    # Place exit order
-                    order_data = {
-                        'apikey': primary_account.get_api_key(),
-                        'strategy': strategy.name,
-                        'symbol': execution.symbol,
-                        'action': exit_transaction,
-                        'exchange': execution.exchange,
-                        'pricetype': 'MARKET',  # Market order for immediate exit
-                        'product': execution.product,
-                        'quantity': str(execution.quantity),
-                        'position_size': str(execution.quantity)
-                    }
-
-                    response = client.placeorder(order_data)
+                    # Place exit order using keyword arguments
+                    response = client.placeorder(
+                        strategy=strategy.name,
+                        symbol=execution.symbol,
+                        action=exit_transaction,
+                        exchange=execution.exchange,
+                        price_type='MARKET',  # Market order for immediate exit
+                        product=execution.product,
+                        quantity=str(execution.quantity)
+                    )
 
                     if response.get('status') == 'success':
                         order_id = response.get('orderid')

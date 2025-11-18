@@ -2051,10 +2051,17 @@ function updateRiskMonitorTable(strategyData) {
 
         const pnlColor = pnl >= 0 ? 'text-success' : 'text-error';
 
+        // Check if position is being closed
+        let closingBadge = '';
+        if (exec.status === 'exit_pending') {
+            const reason = exec.exit_reason || 'closing';
+            closingBadge = `<span class="badge badge-warning badge-xs ml-1 animate-pulse">${reason.toUpperCase()}</span>`;
+        }
+
         html += `
-            <tr>
+            <tr class="${exec.status === 'exit_pending' ? 'opacity-60' : ''}">
                 <td><span class="badge badge-primary badge-sm">${exec.leg_number}</span></td>
-                <td class="font-mono text-xs">${exec.symbol}</td>
+                <td class="font-mono text-xs">${exec.symbol}${closingBadge}</td>
                 <td>${actionBadge}</td>
                 <td class="font-mono">₹${(exec.entry_price || 0).toFixed(2)}</td>
                 <td class="font-mono font-bold">₹${(exec.last_price || 0).toFixed(2)}</td>

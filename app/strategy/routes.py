@@ -1210,7 +1210,7 @@ def strategy_positions(strategy_id):
     # Closed positions will show with quantity=0
     positions = StrategyExecution.query.filter(
         StrategyExecution.strategy_id == strategy_id,
-        StrategyExecution.status.in_(['entered', 'exited'])
+        StrategyExecution.status.in_(['entered', 'exit_pending', 'exited'])
     ).join(TradingAccount).join(StrategyLeg).all()
 
     logger.info(f"[POSITIONS DEBUG] Found {len(positions)} positions for strategy {strategy_id}")
