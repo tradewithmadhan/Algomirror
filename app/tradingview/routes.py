@@ -86,10 +86,10 @@ def get_chart_data(strategy_id):
     Get chart data with Supertrend for a strategy
 
     Query Parameters:
-        - interval: Timeframe (1m, 5m, 15m - default: 5m)
+        - interval: Timeframe (1m, 5m, 15m - default: from strategy settings or 5m)
         - days: Number of days to load (1-5, default: 3)
-        - period: Supertrend ATR period (default: 7)
-        - multiplier: Supertrend multiplier (default: 3)
+        - period: Supertrend ATR period (default: from strategy settings or 7)
+        - multiplier: Supertrend multiplier (default: from strategy settings or 3)
     """
     try:
         strategy = Strategy.query.filter_by(
@@ -97,11 +97,11 @@ def get_chart_data(strategy_id):
             user_id=current_user.id
         ).first_or_404()
 
-        # Get parameters
-        interval = request.args.get('interval', '5m')
+        # Get parameters - use strategy's Supertrend settings as defaults
+        interval = request.args.get('interval', strategy.supertrend_timeframe or '5m')
         days = int(request.args.get('days', 3))
-        period = int(request.args.get('period', 7))
-        multiplier = float(request.args.get('multiplier', 3.0))
+        period = int(request.args.get('period', strategy.supertrend_period or 7))
+        multiplier = float(request.args.get('multiplier', strategy.supertrend_multiplier or 3.0))
 
         # Validate parameters
         if interval not in ['1m', '5m', '15m']:
@@ -162,7 +162,7 @@ def get_chart_data(strategy_id):
         else:
             signal = 'SELL'
 
-        logger.info(f"✓ Returning {len(chart_data)} bars of REAL OHLC data to frontend with Supertrend signal: {signal}")
+        logger.info(f"Returning {len(chart_data)} bars of REAL OHLC data to frontend with Supertrend signal: {signal}")
 
         return jsonify({
             'status': 'success',
@@ -295,7 +295,7 @@ def fetch_spread_historical_data(strategy, legs, interval='5m', days=3):
                             'lots': lots,  # Number of lots (NOT total quantity)
                             'leg_number': leg.leg_number
                         }
-                        logger.info(f"✓ Fetched REAL {len(response)} bars for leg {leg.leg_number} ({symbol}) - {leg.action} x{lots} lots - OHLC data from OpenAlgo")
+                        logger.info(f"Fetched REAL {len(response)} bars for leg {leg.leg_number} ({symbol}) - {leg.action} x{lots} lots - OHLC data from OpenAlgo")
                         logger.info(f"  Sample data - Open: {response['open'].iloc[-1]:.2f}, High: {response['high'].iloc[-1]:.2f}, Low: {response['low'].iloc[-1]:.2f}, Close: {response['close'].iloc[-1]:.2f}")
                     else:
                         logger.error(f"Missing OHLC columns in response for {symbol}. Columns: {response.columns.tolist()}")
@@ -326,7 +326,7 @@ def fetch_spread_historical_data(strategy, legs, interval='5m', days=3):
                                         'lots': lots,
                                         'leg_number': leg.leg_number
                                     }
-                                    logger.info(f"✓ Fetched {len(fallback_response)} bars for leg {leg.leg_number} using fallback instrument ({leg.instrument})")
+                                    logger.info(f"Fetched {len(fallback_response)} bars for leg {leg.leg_number} using fallback instrument ({leg.instrument})")
                         except Exception as fallback_error:
                             logger.error(f"Fallback to base instrument also failed: {fallback_error}")
                 else:
@@ -338,7 +338,7 @@ def fetch_spread_historical_data(strategy, legs, interval='5m', days=3):
 
         # If we couldn't fetch any data, return None
         if not leg_data_dict:
-            logger.error("❌ No real data fetched from OpenAlgo - Cannot proceed without real market data")
+            logger.error("No real data fetched from OpenAlgo - Cannot proceed without real market data")
             return None
 
         # Combine OHLC data from multiple legs into spread using proper formula:
@@ -361,10 +361,10 @@ def fetch_spread_historical_data(strategy, legs, interval='5m', days=3):
 
             if action == 'SELL':
                 sell_dfs.append(weighted_df)
-                logger.info(f"  SELL leg {leg_info['leg_number']} × {lots} lots added")
+                logger.info(f"  SELL leg {leg_info['leg_number']} x {lots} lots added")
             else:  # BUY
                 buy_dfs.append(weighted_df)
-                logger.info(f"  BUY leg {leg_info['leg_number']} × {lots} lots added")
+                logger.info(f"  BUY leg {leg_info['leg_number']} x {lots} lots added")
 
         # Sum all SELL legs (close values only for line chart)
         sell_total = None
@@ -390,19 +390,19 @@ def fetch_spread_historical_data(strategy, legs, interval='5m', days=3):
             # If spread is negative (debit spread), flip to make it positive
             if spread_close.iloc[-1] < 0:
                 spread_close = -spread_close
-                logger.info(f"  ✓ Combined Premium = BUY - SELL (debit spread, flipped to positive)")
+                logger.info(f"  Combined Premium = BUY - SELL (debit spread, flipped to positive)")
             else:
-                logger.info(f"  ✓ Combined Premium = SELL - BUY (credit spread, already positive)")
+                logger.info(f"  Combined Premium = SELL - BUY (credit spread, already positive)")
         elif sell_total is not None:
             # Only SELL legs - use SELL total as spread
             spread_close = sell_total['close']
-            logger.info(f"  ✓ Combined Premium = SELL total (credit spread)")
+            logger.info(f"  Combined Premium = SELL total (credit spread)")
         elif buy_total is not None:
             # Only BUY legs - use BUY total as spread
             spread_close = buy_total['close']
-            logger.info(f"  ✓ Combined Premium = BUY total (debit spread)")
+            logger.info(f"  Combined Premium = BUY total (debit spread)")
         else:
-            logger.error("❌ No valid leg data found")
+            logger.error("No valid leg data found")
             return None
 
         # Create OHLC DataFrame from close values for compatibility (line chart uses close only)
@@ -414,10 +414,10 @@ def fetch_spread_historical_data(strategy, legs, interval='5m', days=3):
         })
 
         if combined_df is None or combined_df.empty:
-            logger.error("❌ Failed to calculate spread")
+            logger.error("Failed to calculate spread")
             return None
 
-        logger.info(f"✓ Successfully combined {len(leg_data_dict)} legs into spread OHLC with {len(combined_df)} bars (REAL DATA)")
+        logger.info(f"Successfully combined {len(leg_data_dict)} legs into spread OHLC with {len(combined_df)} bars (REAL DATA)")
         logger.info(f"  Latest spread - Open: {combined_df['open'].iloc[-1]:.2f}, High: {combined_df['high'].iloc[-1]:.2f}, Low: {combined_df['low'].iloc[-1]:.2f}, Close: {combined_df['close'].iloc[-1]:.2f}")
 
         return combined_df

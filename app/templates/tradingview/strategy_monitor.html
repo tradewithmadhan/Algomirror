@@ -57,9 +57,9 @@
                     <div class="stat-title">Timeframe</div>
                     <div class="stat-value text-lg">
                         <select id="intervalSelect" class="select select-bordered select-sm">
-                            <option value="1m">1 Min</option>
-                            <option value="5m" selected>5 Min</option>
-                            <option value="15m">15 Min</option>
+                            <option value="1m" {% if strategy.supertrend_timeframe == '1m' %}selected{% endif %}>1 Min</option>
+                            <option value="5m" {% if not strategy.supertrend_timeframe or strategy.supertrend_timeframe == '5m' %}selected{% endif %}>5 Min</option>
+                            <option value="15m" {% if strategy.supertrend_timeframe == '15m' %}selected{% endif %}>15 Min</option>
                         </select>
                     </div>
                     <div class="stat-desc">Chart Interval</div>
@@ -81,10 +81,10 @@
                     <div class="stat-title">Supertrend Period</div>
                     <div class="stat-value text-lg">
                         <select id="periodSelect" class="select select-bordered select-sm">
-                            <option value="5">5</option>
-                            <option value="7" selected>7</option>
-                            <option value="10">10</option>
-                            <option value="14">14</option>
+                            <option value="5" {% if strategy.supertrend_period == 5 %}selected{% endif %}>5</option>
+                            <option value="7" {% if not strategy.supertrend_period or strategy.supertrend_period == 7 %}selected{% endif %}>7</option>
+                            <option value="10" {% if strategy.supertrend_period == 10 %}selected{% endif %}>10</option>
+                            <option value="14" {% if strategy.supertrend_period == 14 %}selected{% endif %}>14</option>
                         </select>
                     </div>
                     <div class="stat-desc">ATR Period</div>
@@ -93,11 +93,11 @@
                     <div class="stat-title">Multiplier</div>
                     <div class="stat-value text-lg">
                         <select id="multiplierSelect" class="select select-bordered select-sm">
-                            <option value="2">2.0</option>
-                            <option value="2.5">2.5</option>
-                            <option value="3" selected>3.0</option>
-                            <option value="3.5">3.5</option>
-                            <option value="4">4.0</option>
+                            <option value="2" {% if strategy.supertrend_multiplier == 2.0 %}selected{% endif %}>2.0</option>
+                            <option value="2.5" {% if strategy.supertrend_multiplier == 2.5 %}selected{% endif %}>2.5</option>
+                            <option value="3" {% if not strategy.supertrend_multiplier or strategy.supertrend_multiplier == 3.0 %}selected{% endif %}>3.0</option>
+                            <option value="3.5" {% if strategy.supertrend_multiplier == 3.5 %}selected{% endif %}>3.5</option>
+                            <option value="4" {% if strategy.supertrend_multiplier == 4.0 %}selected{% endif %}>4.0</option>
                         </select>
                     </div>
                     <div class="stat-desc">ATR Multiplier</div>

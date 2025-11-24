@@ -191,7 +191,8 @@ class SupertrendExitService:
                     logger.warning(f"Insufficient data for Supertrend calculation for strategy {strategy.id}")
                     return
 
-                # Calculate Supertrend
+                # Calculate Supertrend on spread OHLC
+                # NOTE: Direction is calculated based on CLOSE price only (not high/low)
                 high = spread_data['high'].values
                 low = spread_data['low'].values
                 close = spread_data['close'].values
@@ -202,28 +203,31 @@ class SupertrendExitService:
                     multiplier=strategy.supertrend_multiplier
                 )
 
-                # Get latest values (last candle)
+                # Get latest values from COMPLETED candle (checked on candle close only)
                 latest_close = close[-1]
                 latest_supertrend = trend[-1]
-                latest_direction = direction[-1]
+                latest_direction = direction[-1]  # Direction based on CLOSE crossing Supertrend
 
-                # Check for exit signal based on type
+                # Check for exit signal based ONLY on close price vs Supertrend
+                # Exit triggers on candle close, executes immediately
                 should_exit = False
                 exit_reason = None
 
                 if strategy.supertrend_exit_type == 'breakout':
-                    # Upper breakout: close above Supertrend (direction = 1)
+                    # Breakout: CLOSE crossed ABOVE Supertrend (direction = 1)
+                    # Checked on candle close only, not intrabar
                     if latest_direction > 0:
                         should_exit = True
                         exit_reason = f'supertrend_breakout (Close: {latest_close:.2f}, ST: {latest_supertrend:.2f})'
-                        logger.info(f"Strategy {strategy.id}: Supertrend BREAKOUT detected")
+                        logger.info(f"Strategy {strategy.id}: Supertrend BREAKOUT - Close crossed above ST on candle close")
 
                 elif strategy.supertrend_exit_type == 'breakdown':
-                    # Downside breakdown: close below Supertrend (direction = -1)
+                    # Breakdown: CLOSE crossed BELOW Supertrend (direction = -1)
+                    # Checked on candle close only, not intrabar
                     if latest_direction < 0:
                         should_exit = True
                         exit_reason = f'supertrend_breakdown (Close: {latest_close:.2f}, ST: {latest_supertrend:.2f})'
-                        logger.info(f"Strategy {strategy.id}: Supertrend BREAKDOWN detected")
+                        logger.info(f"Strategy {strategy.id}: Supertrend BREAKDOWN - Close crossed below ST on candle close")
 
                 if should_exit:
                     logger.info(f"Triggering parallel exit for strategy {strategy.id} - Reason: {exit_reason}")
@@ -282,7 +286,7 @@ class SupertrendExitService:
                 StrategyExecution.symbol.isnot(None)
             ).all()
 
-            # Map leg_id to actual symbol
+            # Map leg_id to actual symbol (lot size comes from leg.lots)
             leg_symbols = {}
             for execution in executions:
                 if execution.leg_id not in leg_symbols:
@@ -322,8 +326,15 @@ class SupertrendExitService:
                     if isinstance(response, pd.DataFrame) and not response.empty:
                         required_cols = ['open', 'high', 'low', 'close']
                         if all(col in response.columns for col in required_cols):
-                            leg_data_dict[f"{leg.leg_number}_{symbol}"] = response
-                            logger.debug(f"Fetched {len(response)} bars for leg {leg.leg_number} ({symbol})")
+                            # Store data with action and lot size for proper spread calculation
+                            lots = leg.lots or 1
+                            leg_data_dict[f"{leg.leg_number}_{symbol}"] = {
+                                'data': response,
+                                'action': leg.action,
+                                'lots': lots,
+                                'leg_number': leg.leg_number
+                            }
+                            logger.debug(f"Fetched {len(response)} bars for leg {leg.leg_number} ({symbol}) - {leg.action} x{lots} lots")
                     elif isinstance(response, dict):
                         # Try fallback to base instrument
                         logger.warning(f"Option symbol {symbol} failed, trying {leg.instrument}")
@@ -335,7 +346,13 @@ class SupertrendExitService:
                             end_date=end_date_str
                         )
                         if isinstance(fallback_response, pd.DataFrame) and not fallback_response.empty:
-                            leg_data_dict[f"{leg.leg_number}_{leg.instrument}"] = fallback_response
+                            lots = leg.lots or 1
+                            leg_data_dict[f"{leg.leg_number}_{leg.instrument}"] = {
+                                'data': fallback_response,
+                                'action': leg.action,
+                                'lots': lots,
+                                'leg_number': leg.leg_number
+                            }
 
                 except Exception as e:
                     logger.error(f"Error fetching data for leg {leg.leg_number}: {e}")
@@ -345,16 +362,73 @@ class SupertrendExitService:
                 logger.error(f"No data fetched for strategy {strategy.id}")
                 return None
 
-            # Combine OHLC data into spread
-            combined_df = None
-            for leg_name, df in leg_data_dict.items():
-                if combined_df is None:
-                    combined_df = df[['open', 'high', 'low', 'close']].copy()
+            # Combine OHLC data into spread using CORRECT formula: SELL - BUY with lot sizes
+            sell_dfs = []
+            buy_dfs = []
+
+            for leg_name, leg_info in leg_data_dict.items():
+                df = leg_info['data']
+                action = leg_info['action']
+                lots = leg_info['lots']
+
+                # Multiply OHLC by lot size
+                weighted_df = df[['open', 'high', 'low', 'close']].copy()
+                weighted_df['open'] = weighted_df['open'] * lots
+                weighted_df['high'] = weighted_df['high'] * lots
+                weighted_df['low'] = weighted_df['low'] * lots
+                weighted_df['close'] = weighted_df['close'] * lots
+
+                if action == 'SELL':
+                    sell_dfs.append(weighted_df)
+                    logger.debug(f"  SELL leg {leg_info['leg_number']} x {lots} lots")
+                else:  # BUY
+                    buy_dfs.append(weighted_df)
+                    logger.debug(f"  BUY leg {leg_info['leg_number']} x {lots} lots")
+
+            # Sum SELL legs
+            sell_total = None
+            if sell_dfs:
+                sell_total = sell_dfs[0].copy()
+                for df in sell_dfs[1:]:
+                    sell_total['open'] = sell_total['open'].add(df['open'], fill_value=0)
+                    sell_total['high'] = sell_total['high'].add(df['high'], fill_value=0)
+                    sell_total['low'] = sell_total['low'].add(df['low'], fill_value=0)
+                    sell_total['close'] = sell_total['close'].add(df['close'], fill_value=0)
+
+            # Sum BUY legs
+            buy_total = None
+            if buy_dfs:
+                buy_total = buy_dfs[0].copy()
+                for df in buy_dfs[1:]:
+                    buy_total['open'] = buy_total['open'].add(df['open'], fill_value=0)
+                    buy_total['high'] = buy_total['high'].add(df['high'], fill_value=0)
+                    buy_total['low'] = buy_total['low'].add(df['low'], fill_value=0)
+                    buy_total['close'] = buy_total['close'].add(df['close'], fill_value=0)
+
+            # Calculate spread = SELL - BUY
+            if sell_total is not None and buy_total is not None:
+                combined_df = sell_total.copy()
+                combined_df['open'] = sell_total['open'] - buy_total['open']
+                combined_df['high'] = sell_total['high'] - buy_total['high']
+                combined_df['low'] = sell_total['low'] - buy_total['low']
+                combined_df['close'] = sell_total['close'] - buy_total['close']
+
+                # Flip if negative (debit spread)
+                if combined_df['close'].iloc[-1] < 0:
+                    combined_df['open'] = -combined_df['open']
+                    combined_df['high'] = -combined_df['high']
+                    combined_df['low'] = -combined_df['low']
+                    combined_df['close'] = -combined_df['close']
+                    logger.info(f"  Spread = BUY - SELL (debit spread, flipped)")
                 else:
-                    combined_df['open'] = combined_df['open'].add(df['open'], fill_value=0)
-                    combined_df['high'] = combined_df['high'].add(df['high'], fill_value=0)
-                    combined_df['low'] = combined_df['low'].add(df['low'], fill_value=0)
-                    combined_df['close'] = combined_df['close'].add(df['close'], fill_value=0)
+                    logger.info(f"  Spread = SELL - BUY (credit spread)")
+            elif sell_total is not None:
+                combined_df = sell_total
+            elif buy_total is not None:
+                combined_df = buy_total
+            else:
+                logger.error(f"No valid leg data for strategy {strategy.id}")
+                return None
 
             logger.info(f"Combined spread data: {len(combined_df)} bars for strategy {strategy.id}")
             return combined_df

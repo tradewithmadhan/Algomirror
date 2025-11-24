@@ -130,6 +130,22 @@
                         </div>
                     </div>
                     {% endif %}
+
+                    <!-- Supertrend Exit -->
+                    {% if strategy.supertrend_exit_enabled %}
+                    <div class="bg-base-200 rounded-lg p-3">
+                        <div class="flex justify-between text-sm mb-1">
+                            <span>Supertrend Exit</span>
+                            <span class="font-mono text-xs">{{ strategy.supertrend_multiplier }},{{ strategy.supertrend_period }},{{ strategy.supertrend_timeframe }}</span>
+                        </div>
+                        <div class="badge {{ 'badge-error' if strategy.supertrend_exit_triggered else 'badge-success' }} badge-sm" id="supertrendStatus-{{ strategy.id }}">
+                            {{ 'Triggered' if strategy.supertrend_exit_triggered else 'Active' }}
+                        </div>
+                        {% if strategy.supertrend_exit_type %}
+                        <div class="text-xs mt-1 opacity-70">Type: {{ strategy.supertrend_exit_type|title }}</div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
                 </div>
 
                 <!-- Positions Table -->
@@ -225,7 +241,12 @@
                     <span class="badge badge-outline badge-success badge-sm">Auto Exit on Max Profit</span>
                     {% endif %}
                     {% if strategy.supertrend_exit_enabled %}
-                    <span class="badge badge-outline badge-info badge-sm">Supertrend Exit</span>
+                    <span class="badge badge-outline badge-info badge-sm">
+                        Supertrend Exit ({{strategy.supertrend_multiplier}},{{strategy.supertrend_period}},{{strategy.supertrend_timeframe}})
+                        {% if strategy.supertrend_exit_triggered %}
+                        - ✓ Triggered
+                        {% endif %}
+                    </span>
                     {% endif %}
                 </div>
             </div>
