@@ -177,7 +177,20 @@
                                 </td>
                                 <td>{{ execution.quantity }}</td>
                                 <td class="font-mono">{{ "%.2f"|format(execution.entry_price or 0) }}</td>
-                                <td class="font-mono" id="ltp-{{ execution.id }}">{{ "%.2f"|format(execution.last_price or 0) }}</td>
+                                <td class="font-mono" id="ltp-{{ execution.id }}">
+                                    {%- if execution.last_price and execution.last_price > 0 -%}
+                                        {{ "%.2f"|format(execution.last_price) }}
+                                    {%- elif execution.unrealized_pnl and execution.entry_price and execution.quantity -%}
+                                        {# Calculate LTP from P&L if not available #}
+                                        {%- if execution.leg and execution.leg.action == 'BUY' -%}
+                                            {{ "%.2f"|format(execution.entry_price + (execution.unrealized_pnl / execution.quantity)) }}
+                                        {%- else -%}
+                                            {{ "%.2f"|format(execution.entry_price - (execution.unrealized_pnl / execution.quantity)) }}
+                                        {%- endif -%}
+                                    {%- else -%}
+                                        0.00
+                                    {%- endif -%}
+                                </td>
                                 <!-- SL Price -->
                                 <td class="font-mono text-error" id="slPrice-{{ execution.id }}">
                                     {% if execution.leg and execution.leg.stop_loss_value %}
@@ -220,7 +233,7 @@
                                     <span class="badge badge-warning badge-xs animate-pulse">
                                         {{ (execution.exit_reason or 'closing')|upper }}
                                     </span>
-                                    {% elif execution.websocket_subscribed %}
+                                    {% elif (execution.last_price and execution.last_price > 0) or (execution.unrealized_pnl and execution.entry_price) %}
                                     <span class="badge badge-success badge-xs">Live</span>
                                     {% else %}
                                     <span class="badge badge-ghost badge-xs">Offline</span>
@@ -460,7 +473,7 @@ function updateRiskData(data) {
                 } else if (execution.status === 'exit_pending') {
                     const reason = (execution.exit_reason || 'closing').toUpperCase();
                     statusEl.innerHTML = `<span class="badge badge-warning badge-xs animate-pulse">${reason}</span>`;
-                } else if (execution.websocket_subscribed) {
+                } else if (execution.last_price && execution.last_price > 0) {
                     statusEl.innerHTML = '<span class="badge badge-success badge-xs">Live</span>';
                 } else {
                     statusEl.innerHTML = '<span class="badge badge-ghost badge-xs">Offline</span>';
