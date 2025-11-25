@@ -641,6 +641,36 @@
                             </div>
                         </div>
                         {% endif %}
+
+                        <!-- Supertrend Exit -->
+                        {% if strategy.supertrend_exit_enabled %}
+                        <div class="bg-base-100 rounded-lg p-3">
+                            <div class="flex justify-between text-sm mb-2">
+                                <span class="flex items-center gap-1">
+                                    <svg class="w-4 h-4 text-info" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path>
+                                    </svg>
+                                    Supertrend Exit
+                                </span>
+                                <span class="font-mono font-bold text-xs">{{ strategy.supertrend_multiplier }},{{ strategy.supertrend_period }},{{ strategy.supertrend_timeframe }}</span>
+                            </div>
+                            <div class="text-sm mb-2">
+                                <span class="text-base-content/60">Type:</span>
+                                <span class="badge badge-outline badge-sm ml-1">{{ strategy.supertrend_exit_type|capitalize if strategy.supertrend_exit_type else 'Breakout' }}</span>
+                            </div>
+                            <div class="text-sm">
+                                <span class="text-base-content/60">Status:</span>
+                                <span class="badge {{ 'badge-error' if strategy.supertrend_exit_triggered else 'badge-success' }} badge-sm ml-1" id="riskSupertrendStatus">
+                                    {{ 'Triggered' if strategy.supertrend_exit_triggered else 'Active' }}
+                                </span>
+                            </div>
+                            <div class="mt-2">
+                                <a href="{{ url_for('tradingview.strategy_monitor', strategy_id=strategy.id) }}" class="btn btn-info btn-xs" target="_blank">
+                                    View Spread Monitor
+                                </a>
+                            </div>
+                        </div>
+                        {% endif %}
                     </div>
 
                     <!-- Leg-level SL/TP Tracking -->
