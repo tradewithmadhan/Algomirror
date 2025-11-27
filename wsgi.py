@@ -1,10 +1,5 @@
-# CRITICAL: Monkey patch MUST be first, before any other imports
-# This fixes the "RLock(s) were not greened" warning and prevents blocking
-# Only use eventlet on Linux (production) - Windows doesn't support it properly
-import platform
-if platform.system() != 'Windows':
-    import eventlet
-    eventlet.monkey_patch()
+# AlgoMirror WSGI entry point
+# Uses standard threading for background tasks (no eventlet - deprecated and Python 3.13+ incompatible)
 
 from app import create_app
 

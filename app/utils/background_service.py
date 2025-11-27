@@ -2,7 +2,7 @@
 Background Service for Automatic Option Chain Monitoring
 Automatically starts option chains when primary account connects
 
-Cross-platform: Uses eventlet on Linux, threading on Windows
+Uses standard threading for background tasks.
 """
 
 import logging
@@ -16,7 +16,7 @@ from flask import current_app
 from sqlalchemy import and_
 
 # Cross-platform compatibility
-from app.utils.compat import sleep, spawn, spawn_n, create_lock, IS_WINDOWS
+from app.utils.compat import sleep, spawn, spawn_n, create_lock
 
 from app.models import TradingAccount, TradingHoursTemplate, TradingSession, MarketHoliday, SpecialTradingSession
 from app.utils.option_chain import OptionChainManager

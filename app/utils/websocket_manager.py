@@ -2,7 +2,7 @@
 Professional WebSocket Manager with Account Failover
 Handles real-time data streaming with enterprise-grade reliability
 
-Cross-platform: Uses eventlet on Linux, threading on Windows
+Uses standard threading for background tasks.
 """
 
 import json
@@ -15,7 +15,7 @@ import websocket
 import pytz
 
 # Cross-platform compatibility
-from app.utils.compat import sleep, spawn, create_lock, IS_WINDOWS
+from app.utils.compat import sleep, spawn, create_lock
 
 logger = logging.getLogger(__name__)
 
@@ -180,12 +180,9 @@ class ProfessionalWebSocketManager:
                 on_close=self.on_close
             )
 
-            # Start WebSocket in background (greenlet on Linux, thread on Windows)
-            if IS_WINDOWS:
-                self.ws_thread = threading.Thread(target=self.ws.run_forever, daemon=True)
-                self.ws_thread.start()
-            else:
-                self.ws_thread = spawn(self.ws.run_forever)
+            # Start WebSocket in background thread
+            self.ws_thread = threading.Thread(target=self.ws.run_forever, daemon=True)
+            self.ws_thread.start()
 
             # Wait for connection to establish
             sleep(2)
@@ -328,15 +325,9 @@ class ProfessionalWebSocketManager:
     
     def schedule_reconnection(self):
         """Schedule reconnection with exponential backoff"""
-        if IS_WINDOWS:
-            # Windows: use threading
-            if not self.reconnect_thread or not self.reconnect_thread.is_alive():
-                self.reconnect_thread = threading.Thread(target=self.reconnect_with_backoff, daemon=True)
-                self.reconnect_thread.start()
-        else:
-            # Linux: use eventlet greenlet
-            if not self.reconnect_thread or self.reconnect_thread.dead:
-                self.reconnect_thread = spawn(self.reconnect_with_backoff)
+        if not self.reconnect_thread or not self.reconnect_thread.is_alive():
+            self.reconnect_thread = threading.Thread(target=self.reconnect_with_backoff, daemon=True)
+            self.reconnect_thread.start()
     
     def reconnect_with_backoff(self):
         """Reconnect with exponential backoff"""

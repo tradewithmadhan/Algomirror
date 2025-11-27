@@ -2,7 +2,7 @@
 Strategy Executor Service
 Handles multi-account strategy execution with OpenAlgo integration
 
-Cross-platform: Uses eventlet on Linux, threading on Windows
+Uses standard threading for background tasks.
 """
 
 import logging
@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Optional
 import json
 
 # Cross-platform compatibility
-from app.utils.compat import sleep, spawn, create_lock, IS_WINDOWS
+from app.utils.compat import sleep, create_lock
 
 from app import db
 from app.models import Strategy, StrategyLeg, StrategyExecution, TradingAccount
@@ -113,37 +113,28 @@ class StrategyExecutor:
         if self.use_margin_calculator:
             self._pre_calculate_multi_leg_quantities(legs)
 
-        # PHASE 1: Execute all legs in PARALLEL
+        # PHASE 1: Execute all legs in PARALLEL using threads
         results = []
-        tasks = []
+        threads = []
         results_lock = create_lock()
 
         for i, leg in enumerate(legs, 1):
-            logger.info(f"[LEG {i}] Starting parallel task for leg {i}/{len(legs)}: "
+            logger.info(f"[LEG {i}] Starting parallel thread for leg {i}/{len(legs)}: "
                        f"{leg.instrument} {leg.action} {leg.option_type if leg.product_type == 'options' else ''}")
 
-            if IS_WINDOWS:
-                # Windows: use threading
-                thread = threading.Thread(
-                    target=self._execute_leg_parallel,
-                    args=(leg, results, results_lock),
-                    name=f"Leg-{i}-{leg.instrument}",
-                    daemon=False
-                )
-                thread.start()
-                tasks.append(thread)
-            else:
-                # Linux: use eventlet greenlet
-                greenlet = spawn(self._execute_leg_parallel, leg, results, results_lock)
-                tasks.append(greenlet)
+            thread = threading.Thread(
+                target=self._execute_leg_parallel,
+                args=(leg, results, results_lock),
+                name=f"Leg-{i}-{leg.instrument}",
+                daemon=False
+            )
+            thread.start()
+            threads.append(thread)
 
         # Wait for all legs to complete
-        logger.info(f"[WAITING] Waiting for {len(tasks)} legs to complete...")
-        for task in tasks:
-            if IS_WINDOWS:
-                task.join()
-            else:
-                task.wait()
+        logger.info(f"[WAITING] Waiting for {len(threads)} legs to complete...")
+        for thread in threads:
+            thread.join()
 
         logger.info(f"[COMPLETED] All {len(legs)} legs completed. Total orders: {len(results)}")
         print(f"[EXECUTE END] Total orders placed: {len(results)}")
@@ -213,8 +204,8 @@ class StrategyExecutor:
                 'error': f'Invalid quantity: {base_quantity}'
             }]
 
-        # Execute on each account (using parallel execution)
-        tasks = []
+        # Execute on each account (using parallel threads)
+        threads = []
         logger.info(f"Executing leg {leg.leg_number} on {len(self.accounts)} accounts: {[a.account_name for a in self.accounts]}")
 
         thread_index = 0
@@ -235,31 +226,21 @@ class StrategyExecutor:
             else:
                 quantity = base_quantity
 
-            logger.info(f"Starting task for account {account.account_name}, leg {leg.leg_number}, qty {quantity}")
-            if IS_WINDOWS:
-                thread = threading.Thread(
-                    target=self._execute_on_account,
-                    args=(account, leg, symbol, exchange, quantity, results, thread_index),
-                    daemon=True
-                )
-                thread.start()
-                tasks.append(thread)
-            else:
-                greenlet = spawn(
-                    self._execute_on_account,
-                    account, leg, symbol, exchange, quantity, results, thread_index
-                )
-                tasks.append(greenlet)
+            logger.info(f"Starting thread for account {account.account_name}, leg {leg.leg_number}, qty {quantity}")
+            thread = threading.Thread(
+                target=self._execute_on_account,
+                args=(account, leg, symbol, exchange, quantity, results, thread_index),
+                daemon=True
+            )
+            thread.start()
+            threads.append(thread)
             thread_index += 1
 
-        logger.info(f"Waiting for {len(tasks)} tasks to complete for leg {leg.leg_number}")
+        logger.info(f"Waiting for {len(threads)} threads to complete for leg {leg.leg_number}")
 
-        # Wait for all tasks to complete
-        for task in tasks:
-            if IS_WINDOWS:
-                task.join()
-            else:
-                task.wait()
+        # Wait for all threads to complete
+        for thread in threads:
+            thread.join()
 
         logger.info(f"All threads completed for leg {leg.leg_number}. Total results: {len(results)}")
 
@@ -1422,12 +1403,9 @@ class StrategyExecutor:
         # Subscribe to WebSocket for real-time price updates
         self._subscribe_to_websocket(execution.symbol, execution.exchange)
 
-        # Start monitoring task - pass execution ID to avoid session issues
-        if IS_WINDOWS:
-            thread = threading.Thread(target=self._monitor_exit_conditions, args=(execution.id,), daemon=True)
-            thread.start()
-        else:
-            spawn(self._monitor_exit_conditions, execution.id)
+        # Start monitoring thread - pass execution ID to avoid session issues
+        thread = threading.Thread(target=self._monitor_exit_conditions, args=(execution.id,), daemon=True)
+        thread.start()
 
     def _subscribe_to_websocket(self, symbol: str, exchange: str):
         """Subscribe to WebSocket for real-time price updates"""

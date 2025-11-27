@@ -2,7 +2,7 @@
 Background Order Status Polling Service
 Checks pending orders every 2 seconds and updates database without blocking order placement
 
-Cross-platform: Uses eventlet on Linux, threading on Windows
+Uses standard threading for background tasks.
 """
 
 import logging
@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Dict
 
 # Cross-platform compatibility
-from app.utils.compat import sleep, spawn, create_lock, IS_WINDOWS
+from app.utils.compat import sleep, create_lock
 
 from app import db
 from app.models import StrategyExecution
@@ -33,7 +33,7 @@ class OrderStatusPoller:
     """
 
     _instance = None
-    _lock = threading.Lock()  # Use threading.Lock for singleton pattern (works on both platforms)
+    _lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
@@ -58,12 +58,8 @@ class OrderStatusPoller:
         """Start the background polling service"""
         if not self.is_running:
             self.is_running = True
-            # Spawn background task (greenlet on Linux, thread on Windows)
-            if IS_WINDOWS:
-                self.poller_thread = threading.Thread(target=self._poll_loop, daemon=True, name="OrderStatusPoller")
-                self.poller_thread.start()
-            else:
-                self.poller_thread = spawn(self._poll_loop)
+            self.poller_thread = threading.Thread(target=self._poll_loop, daemon=True, name="OrderStatusPoller")
+            self.poller_thread.start()
             logger.info("[STARTED] Order Status Poller started")
 
     def stop(self):
@@ -71,10 +67,7 @@ class OrderStatusPoller:
         self.is_running = False
         if self.poller_thread:
             try:
-                if IS_WINDOWS:
-                    self.poller_thread.join(timeout=5)
-                else:
-                    self.poller_thread.kill()  # Kill eventlet greenlet
+                self.poller_thread.join(timeout=5)
             except Exception:
                 pass
         logger.info("[STOPPED] Order Status Poller stopped")

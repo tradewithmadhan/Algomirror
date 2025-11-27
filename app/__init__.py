@@ -1,11 +1,5 @@
-# CRITICAL: Eventlet monkey patch must happen FIRST before any other imports
-# This fixes "RLock(s) were not greened" and prevents blocking I/O
-# Only use eventlet on Linux (production) - Windows doesn't support it properly
-import platform
-IS_WINDOWS = platform.system() == 'Windows'
-if not IS_WINDOWS:
-    import eventlet
-    eventlet.monkey_patch()
+# AlgoMirror Flask Application Factory
+# Uses standard threading for background tasks (no eventlet - deprecated and Python 3.13+ incompatible)
 
 import os
 import logging
