@@ -8,7 +8,7 @@ Key Features:
 - Trading hours from TradingHoursTemplate (no hardcoding)
 - Integrates with OrderStatusPoller for order updates
 
-Cross-platform: Uses eventlet on Linux, threading on Windows
+Uses standard threading for background tasks
 """
 import logging
 from datetime import datetime

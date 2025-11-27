@@ -336,25 +336,19 @@ Werkzeug==3.1.3
 wrapt==1.17.3
 WTForms==3.2.1
 gunicorn==23.0.0
-eventlet==0.38.1
 EOF
 
 # Install dependencies using uv
 sudo $UV_CMD pip install --python $VENV_PATH/bin/python -r /tmp/algomirror_requirements.txt
 check_status "Failed to install Python dependencies"
 
-# Verify gunicorn and eventlet installation
-log_message "\nVerifying gunicorn and eventlet installation..." "$BLUE"
+# Verify gunicorn installation
+log_message "\nVerifying gunicorn installation..." "$BLUE"
 ACTIVATE_CMD="source $VENV_PATH/bin/activate"
 if ! sudo bash -c "$ACTIVATE_CMD && pip freeze | grep -q 'gunicorn=='"; then
     log_message "Installing gunicorn..." "$YELLOW"
     sudo $UV_CMD pip install --python $VENV_PATH/bin/python gunicorn
     check_status "Failed to install gunicorn"
-fi
-if ! sudo bash -c "$ACTIVATE_CMD && pip freeze | grep -q 'eventlet=='"; then
-    log_message "Installing eventlet..." "$YELLOW"
-    sudo $UV_CMD pip install --python $VENV_PATH/bin/python eventlet
-    check_status "Failed to install eventlet"
 fi
 
 # Install Node dependencies and build CSS
@@ -607,8 +601,9 @@ User=www-data
 Group=www-data
 WorkingDirectory=/var/python/algomirror/app
 ExecStart=/bin/bash -c 'source /var/python/algomirror/venv/bin/activate && exec gunicorn \
-    --worker-class eventlet \
-    --timeout 0 \
+    --worker-class gthread \
+    --threads 4 \
+    --timeout 120 \
     -w 1 \
     --bind unix:/var/python/algomirror/algomirror.sock \
     --log-level info \
@@ -624,22 +619,55 @@ WantedBy=multi-user.target
 EOL
 check_status "Failed to create systemd service"
 
+# Create WebSocket systemd service (runs separately)
+log_message "\nCreating WebSocket systemd service..." "$BLUE"
+sudo tee /etc/systemd/system/${SERVICE_NAME}-websocket.service > /dev/null << EOL
+[Unit]
+Description=AlgoMirror WebSocket Service
+After=network.target ${SERVICE_NAME}.service
+Wants=${SERVICE_NAME}.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/python/algomirror/app
+ExecStart=/bin/bash -c 'source /var/python/algomirror/venv/bin/activate && exec python websocket_service.py'
+Restart=always
+RestartSec=5
+TimeoutSec=60
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target
+EOL
+check_status "Failed to create WebSocket systemd service"
+
 # Reload systemd and start services
 log_message "\nStarting services..." "$BLUE"
 sudo systemctl daemon-reload
 sudo systemctl enable $SERVICE_NAME
+sudo systemctl enable ${SERVICE_NAME}-websocket
 sudo systemctl start $SERVICE_NAME
+sudo systemctl start ${SERVICE_NAME}-websocket
 sudo systemctl restart nginx
 check_status "Failed to start services"
 
-# Verify service is running
+# Verify services are running
 log_message "\nVerifying service status..." "$BLUE"
 sleep 3
 if sudo systemctl is-active --quiet $SERVICE_NAME; then
-    log_message "AlgoMirror service is running" "$GREEN"
+    log_message "AlgoMirror main service is running" "$GREEN"
 else
-    log_message "Warning: AlgoMirror service may not be running properly" "$YELLOW"
+    log_message "Warning: AlgoMirror main service may not be running properly" "$YELLOW"
     log_message "Check logs: sudo journalctl -u $SERVICE_NAME -n 50" "$BLUE"
+fi
+
+if sudo systemctl is-active --quiet ${SERVICE_NAME}-websocket; then
+    log_message "AlgoMirror WebSocket service is running" "$GREEN"
+else
+    log_message "Warning: AlgoMirror WebSocket service may not be running properly" "$YELLOW"
+    log_message "Check logs: sudo journalctl -u ${SERVICE_NAME}-websocket -n 50" "$BLUE"
 fi
 
 # Installation complete
@@ -653,7 +681,8 @@ log_message "Installation Directory: $ALGOMIRROR_PATH" "$BLUE"
 log_message "Database: $BASE_PATH/instance/algomirror.db" "$BLUE"
 log_message "Environment File: $ENV_FILE" "$BLUE"
 log_message "Socket File: $SOCKET_FILE" "$BLUE"
-log_message "Service Name: $SERVICE_NAME" "$BLUE"
+log_message "Main Service: $SERVICE_NAME" "$BLUE"
+log_message "WebSocket Service: ${SERVICE_NAME}-websocket" "$BLUE"
 log_message "Nginx Config: /etc/nginx/sites-available/$DOMAIN" "$BLUE"
 log_message "SSL: Enabled with Let's Encrypt" "$BLUE"
 log_message "Installation Log: $LOG_FILE" "$BLUE"
@@ -671,10 +700,15 @@ log_message "3. Add your OpenAlgo account connections" "$GREEN"
 log_message "4. Configure broker settings" "$GREEN"
 
 log_message "\n=== Useful Commands ===" "$YELLOW"
-log_message "Check Status: sudo systemctl status $SERVICE_NAME" "$BLUE"
-log_message "View Logs: sudo journalctl -u $SERVICE_NAME -f" "$BLUE"
-log_message "Restart Service: sudo systemctl restart $SERVICE_NAME" "$BLUE"
+log_message "Check Main Status: sudo systemctl status $SERVICE_NAME" "$BLUE"
+log_message "Check WebSocket Status: sudo systemctl status ${SERVICE_NAME}-websocket" "$BLUE"
+log_message "View Main Logs: sudo journalctl -u $SERVICE_NAME -f" "$BLUE"
+log_message "View WebSocket Logs: sudo journalctl -u ${SERVICE_NAME}-websocket -f" "$BLUE"
+log_message "Restart Main Service: sudo systemctl restart $SERVICE_NAME" "$BLUE"
+log_message "Restart WebSocket Service: sudo systemctl restart ${SERVICE_NAME}-websocket" "$BLUE"
+log_message "Restart Both: sudo systemctl restart $SERVICE_NAME ${SERVICE_NAME}-websocket" "$BLUE"
 log_message "View Application Logs: tail -f $ALGOMIRROR_PATH/logs/algomirror.log" "$BLUE"
+log_message "View WebSocket Logs: tail -f $BASE_PATH/logs/websocket_service.log" "$BLUE"
 log_message "View Error Logs: tail -f $BASE_PATH/logs/error.log" "$BLUE"
 
 log_message "\n=== Troubleshooting ===" "$YELLOW"

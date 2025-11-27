@@ -1,0 +1,24 @@
+[Unit]
+Description=AlgoMirror WebSocket Service
+After=network.target algomirror.service
+Wants=algomirror.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/python/algomirror/app
+ExecStart=/bin/bash -c 'source /var/python/algomirror/venv/bin/activate && exec python websocket_service.py'
+Restart=always
+RestartSec=5
+TimeoutSec=60
+
+# Logging
+StandardOutput=append:/var/python/algomirror/logs/websocket_service.log
+StandardError=append:/var/python/algomirror/logs/websocket_service.log
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+
+[Install]
+WantedBy=multi-user.target

@@ -9,7 +9,7 @@ Key Features:
 - Real-time P&L calculations using WebSocket data
 - Audit logging of all risk events
 
-Cross-platform: Uses eventlet on Linux, threading on Windows
+Uses standard threading for background tasks
 """
 import logging
 from datetime import datetime

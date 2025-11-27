@@ -41,7 +41,6 @@ dependencies = [
     { name = "deprecated" },
     { name = "dnspython" },
     { name = "email-validator" },
-    { name = "eventlet" },
     { name = "flask" },
     { name = "flask-cors" },
     { name = "flask-limiter" },
@@ -144,7 +143,6 @@ requires-dist = [
     { name = "deprecated", specifier = "==1.2.18" },
     { name = "dnspython", specifier = "==2.7.0" },
     { name = "email-validator", specifier = "==2.2.0" },
-    { name = "eventlet", specifier = "==0.40.4" },
     { name = "faker", marker = "extra == 'testing'", specifier = ">=18.0.0" },
     { name = "flake8", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "flask", specifier = "==3.1.2" },
@@ -632,19 +630,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/48/ce/13508a1ec3f8bb981ae4ca79ea40384becc868bfae97fd1c942bb3a001b1/email_validator-2.2.0.tar.gz", hash = "sha256:cb690f344c617a714f22e66ae771445a1ceb46821152df8e165c5f9a364582b7", size = 48967, upload-time = "2024-06-20T11:30:30.034Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d7/ee/bf0adb559ad3c786f12bcbc9296b3f5675f529199bef03e2df281fa1fadb/email_validator-2.2.0-py3-none-any.whl", hash = "sha256:561977c2d73ce3611850a06fa56b414621e0c8faa9d66f2611407d87465da631", size = 33521, upload-time = "2024-06-20T11:30:28.248Z" },
-]
-
-[[package]]
-name = "eventlet"
-version = "0.40.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dnspython" },
-    { name = "greenlet" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/d1/d8/f72d8583db7c559445e0e9500a9b9787332370c16980802204a403634585/eventlet-0.40.4.tar.gz", hash = "sha256:69bef712b1be18b4930df6f0c495d2a882bf7b63aa111e7b6eeff461cfcaf26f", size = 565920, upload-time = "2025-11-26T13:57:31.126Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/22/6d/8e1fa901f6a8307f90e7bd932064e27a0062a4a7a16af38966a9c3293c52/eventlet-0.40.4-py3-none-any.whl", hash = "sha256:6326c6d0bf55810bece151f7a5750207c610f389ba110ffd1541ed6e5215485b", size = 364588, upload-time = "2025-11-26T13:57:29.09Z" },
 ]
 
 [[package]]
