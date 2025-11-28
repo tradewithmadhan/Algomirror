@@ -65,7 +65,9 @@ def get_final_bands_nb(close, upper, lower):
         lowerBand := lowerBand > prevLowerBand or close[1] < prevLowerBand ? lowerBand : prevLowerBand
         upperBand := upperBand < prevUpperBand or close[1] > prevUpperBand ? upperBand : prevUpperBand
 
-        if prevSuperTrend == prevUpperBand
+        if na(atr[1])
+            _direction := 1
+        else if prevSuperTrend == prevUpperBand
             _direction := close > upperBand ? -1 : 1
         else
             _direction := close < lowerBand ? 1 : -1
@@ -89,15 +91,45 @@ def get_final_bands_nb(close, upper, lower):
     long = np.full(n, np.nan)   # Bullish line (lower band when direction = -1)
     short = np.full(n, np.nan)  # Bearish line (upper band when direction = 1)
 
-    for i in range(1, n):
+    # Find first valid index (where bands are not NaN)
+    first_valid = -1
+    for i in range(n):
+        if not np.isnan(upper[i]) and not np.isnan(lower[i]):
+            first_valid = i
+            break
+
+    if first_valid < 0:
+        return trend, dir_, long, short
+
+    # Initialize first valid bar - Pine Script: if na(atr[1]) then direction = 1
+    # First bar starts as bearish (direction = 1), supertrend = upper band
+    dir_[first_valid] = 1
+    trend[first_valid] = upper[first_valid]
+    short[first_valid] = upper[first_valid]
+
+    # Process remaining bars
+    for i in range(first_valid + 1, n):
+        # Skip if current bar has NaN bands
+        if np.isnan(upper[i]) or np.isnan(lower[i]):
+            continue
+
+        # Check if previous bar had valid bands
+        prev_upper_valid = not np.isnan(upper[i - 1])
+        prev_lower_valid = not np.isnan(lower[i - 1])
+
         # Step 1: Adjust bands FIRST (before direction check) - matching Pine Script
+        # Pine uses nz() which returns 0 for NA, but we handle differently:
+        # Only adjust if previous value was valid
+
         # lowerBand := lowerBand > prevLowerBand or close[1] < prevLowerBand ? lowerBand : prevLowerBand
-        if not (lower[i] > lower[i - 1] or close[i - 1] < lower[i - 1]):
-            lower[i] = lower[i - 1]
+        if prev_lower_valid:
+            if not (lower[i] > lower[i - 1] or close[i - 1] < lower[i - 1]):
+                lower[i] = lower[i - 1]
 
         # upperBand := upperBand < prevUpperBand or close[1] > prevUpperBand ? upperBand : prevUpperBand
-        if not (upper[i] < upper[i - 1] or close[i - 1] > upper[i - 1]):
-            upper[i] = upper[i - 1]
+        if prev_upper_valid:
+            if not (upper[i] < upper[i - 1] or close[i - 1] > upper[i - 1]):
+                upper[i] = upper[i - 1]
 
         # Step 2: Determine direction based on previous supertrend position
         # In Pine: if prevSuperTrend == prevUpperBand means we were bearish (direction was 1)
