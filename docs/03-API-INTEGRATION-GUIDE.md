@@ -660,6 +660,202 @@ class APIMetrics:
             self.error_count.inc()
 ```
 
+## Strategy Execution Integration
+
+### 1. Strategy Executor
+
+```python
+# app/utils/strategy_executor.py
+class StrategyExecutor:
+    """Parallel strategy execution engine with freeze quantity handling"""
+
+    def __init__(self, strategy_id, account_ids):
+        self.strategy_id = strategy_id
+        self.account_ids = account_ids
+        self.max_workers = min(len(account_ids), 5)
+
+    def execute_entry(self):
+        """Execute strategy entry across all accounts in parallel"""
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
+            futures = []
+            for account_id in self.account_ids:
+                future = executor.submit(self._execute_for_account, account_id)
+                futures.append(future)
+
+            # Collect results
+            results = []
+            for future in as_completed(futures):
+                results.append(future.result())
+
+            return results
+
+    def _execute_for_account(self, account_id):
+        """Execute strategy for a single account with order splitting"""
+        account = TradingAccount.query.get(account_id)
+
+        for leg in self.strategy.legs:
+            # Calculate total quantity
+            total_qty = leg.lots * self.get_lot_size(leg.instrument)
+            freeze_qty = self.get_freeze_quantity(leg.instrument)
+
+            # Split orders if quantity exceeds freeze limit
+            orders = self._split_orders(total_qty, freeze_qty, leg)
+
+            for order in orders:
+                self._place_order(account, order)
+```
+
+### 2. Margin Calculator Integration
+
+```python
+# app/utils/margin_calculator.py
+class MarginCalculator:
+    """Dynamic lot sizing based on available margin and trade quality"""
+
+    def calculate_lots(self, account_id, strategy):
+        """Calculate optimal lots based on margin and quality grade"""
+        account = TradingAccount.query.get(account_id)
+
+        # Get available margin
+        client = ExtendedOpenAlgoAPI(
+            api_key=account.get_api_key(),
+            host=account.host_url
+        )
+        funds = client.funds()
+        available_margin = funds.get('availablecash', 0)
+
+        # Get trade quality percentage
+        quality = TradeQuality.query.filter_by(
+            user_id=account.user_id,
+            quality_grade=strategy.quality_grade
+        ).first()
+        usable_margin = available_margin * (quality.margin_percentage / 100)
+
+        # Calculate margin per lot based on expiry
+        is_expiry = self._is_expiry_day()
+        margin_req = self._get_margin_requirement(
+            strategy.instrument,
+            strategy.trade_type,
+            is_expiry
+        )
+
+        # Return calculated lots
+        return int(usable_margin / margin_req)
+```
+
+### 3. Supertrend Exit Integration
+
+```python
+# app/utils/supertrend_exit_service.py
+class SupertrendExitService:
+    """Background service for Supertrend-based exit monitoring"""
+
+    def __init__(self):
+        self.active_strategies = {}
+        self.monitor_thread = None
+        self.running = False
+
+    def start_monitoring(self, strategy_id):
+        """Start monitoring a strategy for Supertrend exits"""
+        strategy = Strategy.query.get(strategy_id)
+
+        if not strategy.supertrend_exit_enabled:
+            return
+
+        self.active_strategies[strategy_id] = {
+            'strategy': strategy,
+            'exit_type': strategy.supertrend_exit_type,  # 'breakout' or 'breakdown'
+            'period': strategy.supertrend_period,
+            'multiplier': strategy.supertrend_multiplier,
+            'timeframe': strategy.supertrend_timeframe
+        }
+
+        if not self.running:
+            self._start_monitor_thread()
+
+    def check_exit_signal(self, strategy_id, ohlc_data):
+        """Check if Supertrend exit condition is met"""
+        from app.utils.supertrend import calculate_supertrend
+
+        config = self.active_strategies[strategy_id]
+
+        # Calculate Supertrend
+        trend, direction, _, _ = calculate_supertrend(
+            ohlc_data['high'],
+            ohlc_data['low'],
+            ohlc_data['close'],
+            config['period'],
+            config['multiplier']
+        )
+
+        current_direction = direction[-1]
+        previous_direction = direction[-2]
+
+        # Check for signal
+        if config['exit_type'] == 'breakout':
+            # Exit on bullish breakout (direction changes to 1)
+            return previous_direction == -1 and current_direction == 1
+        else:  # breakdown
+            # Exit on bearish breakdown (direction changes to -1)
+            return previous_direction == 1 and current_direction == -1
+```
+
+## Order Status Polling
+
+### Background Order Synchronization
+
+```python
+# app/utils/order_status_poller.py
+class OrderStatusPoller:
+    """Background service for polling order status updates"""
+
+    def __init__(self, poll_interval=5):
+        self.poll_interval = poll_interval
+        self.running = False
+        self.poll_thread = None
+
+    def start(self):
+        """Start background polling"""
+        self.running = True
+        self.poll_thread = threading.Thread(target=self._poll_loop, daemon=True)
+        self.poll_thread.start()
+
+    def _poll_loop(self):
+        """Main polling loop"""
+        while self.running:
+            try:
+                self._update_pending_orders()
+                time.sleep(self.poll_interval)
+            except Exception as e:
+                logger.error(f"Polling error: {e}")
+
+    def _update_pending_orders(self):
+        """Update status of pending orders"""
+        pending_executions = StrategyExecution.query.filter_by(
+            status='pending'
+        ).all()
+
+        for execution in pending_executions:
+            account = execution.account
+            client = ExtendedOpenAlgoAPI(
+                api_key=account.get_api_key(),
+                host=account.host_url
+            )
+
+            # Get order status from broker
+            orderbook = client.orderbook()
+
+            # Update execution status
+            for order in orderbook:
+                if order.get('order_id') == execution.order_id:
+                    execution.broker_order_status = order.get('status')
+                    if order.get('status') == 'complete':
+                        execution.status = 'entered'
+                        execution.entry_price = order.get('average_price')
+                    db.session.commit()
+                    break
+```
+
 ## Testing Integration
 
 ### 1. Mock API Client

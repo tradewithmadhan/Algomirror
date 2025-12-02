@@ -13,11 +13,14 @@ AlgoMirror is an enterprise-grade multi-account management platform for OpenAlgo
 - **Real-time Synchronization**: Live updates across all connected accounts
 
 ### 2. Advanced Trading Features
-- **Option Chain Monitoring**: Real-time NIFTY & BANKNIFTY option chains with market depth
+- **Option Chain Monitoring**: Real-time NIFTY, BANKNIFTY & SENSEX option chains with market depth
 - **WebSocket Streaming**: Professional-grade real-time data with automatic reconnection
 - **Order Management**: Place, modify, and cancel orders across multiple accounts
 - **Position Tracking**: Real-time P&L calculation and position monitoring
 - **Holdings Analysis**: Long-term portfolio tracking with performance metrics
+- **Strategy Builder**: Visual strategy builder with multi-leg support
+- **Supertrend Indicator**: Pine Script v6 compatible technical analysis with Numba optimization
+- **Risk Management**: Max loss/profit targets, trailing stop-loss, and Supertrend-based exits
 
 ### 3. Enterprise Security
 - **Zero-Trust Architecture**: No default accounts, first user becomes admin
@@ -39,6 +42,8 @@ AlgoMirror is an enterprise-grade multi-account management platform for OpenAlgo
 - **WebSocket**: Native WebSocket client with enterprise features
 - **Encryption**: Cryptography library with Fernet symmetric encryption
 - **Authentication**: Flask-Login with secure session management
+- **Technical Analysis**: TA-Lib with Numba-optimized Supertrend implementation
+- **Threading**: Native Python threading (gthread worker for Gunicorn)
 
 ### Frontend
 - **CSS Framework**: Tailwind CSS + DaisyUI (OpenAlgo theme)
@@ -75,8 +80,14 @@ Algomirror/
 │   │   ├── websocket_manager.py   # Professional WebSocket manager
 │   │   ├── option_chain.py        # Option chain management
 │   │   ├── rate_limiter.py        # Rate limiting decorators
-│   │   └── lot_sizing_engine.py   # Position sizing calculations
-│   ├── strategies/          # Trading strategy modules
+│   │   ├── lot_sizing_engine.py   # Position sizing calculations
+│   │   ├── supertrend.py          # Numba-optimized Supertrend indicator
+│   │   ├── supertrend_exit_service.py  # Background Supertrend exit monitoring
+│   │   ├── margin_calculator.py   # Dynamic margin and lot calculation
+│   │   ├── strategy_executor.py   # Parallel strategy execution engine
+│   │   └── order_status_poller.py # Background order status polling
+│   ├── strategy/            # Strategy blueprint (builder, execution)
+│   ├── margin/              # Margin management blueprint
 │   └── templates/           # Jinja2 HTML templates
 │       ├── base.html        # Core layout with theme system
 │       ├── layout.html      # Extended layout for pages
@@ -294,12 +305,30 @@ ENCRYPTION_KEY=<base64-encoded-key>
 - Monitor rate limiting metrics
 - Review failover history
 
+## Strategy & Risk Management Features
+
+### Strategy Builder
+- **Visual Builder**: Drag-and-drop strategy construction with multi-leg support
+- **Instrument Support**: NIFTY, BANKNIFTY, SENSEX options and futures
+- **Strike Selection**: ATM, ITM, OTM with configurable offsets, or premium-based selection
+- **Risk Profiles**: Fixed lots, Conservative (40%), Balanced (65%), Aggressive (80%)
+
+### Risk Management
+- **Max Loss/Profit Targets**: Strategy-level profit and loss limits with automatic exits
+- **Trailing Stop Loss**: Percentage, points, or amount-based trailing stops
+- **Supertrend Exits**: Technical indicator-based exit signals (breakout/breakdown)
+- **Risk Event Logging**: Complete audit trail of all risk threshold triggers
+
+### Margin Calculator
+- **Dynamic Lot Sizing**: Calculate optimal lots based on available margin
+- **Trade Quality Grades**: A (95%), B (65%), C (36%) margin utilization
+- **Expiry Awareness**: Different margin requirements for expiry vs non-expiry days
+- **Freeze Quantity Handling**: Automatic order splitting for large positions
+
 ## Future Enhancements
 
 ### Planned Features
-- Advanced strategy builder
 - Backtesting framework
-- Risk management dashboard
 - Multi-user collaboration
 - Mobile application
 - REST API v2

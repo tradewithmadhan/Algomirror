@@ -822,4 +822,358 @@ class FeatureTests(unittest.TestCase):
         pass
 ```
 
-This comprehensive features implementation guide provides all the necessary code and instructions to build AlgoMirror's complete functionality.
+## 11. Strategy Builder Implementation
+
+### Strategy Model
+
+```python
+# app/models.py
+class Strategy(db.Model):
+    __tablename__ = 'strategies'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.Text)
+    market_condition = db.Column(db.String(50))  # 'non_expiry', 'expiry', 'any'
+    risk_profile = db.Column(db.String(50))  # 'fixed_lots', 'balanced', 'conservative', 'aggressive'
+
+    # Timing settings
+    entry_time = db.Column(db.Time)
+    exit_time = db.Column(db.Time)
+    square_off_time = db.Column(db.Time)
+
+    # Risk management
+    max_loss = db.Column(db.Float)
+    max_profit = db.Column(db.Float)
+    trailing_sl = db.Column(db.Float)
+    risk_monitoring_enabled = db.Column(db.Boolean, default=True)
+    auto_exit_on_max_loss = db.Column(db.Boolean, default=True)
+    auto_exit_on_max_profit = db.Column(db.Boolean, default=True)
+
+    # Supertrend-based exit
+    supertrend_exit_enabled = db.Column(db.Boolean, default=False)
+    supertrend_exit_type = db.Column(db.String(20))  # 'breakout' or 'breakdown'
+    supertrend_period = db.Column(db.Integer, default=7)
+    supertrend_multiplier = db.Column(db.Float, default=3.0)
+    supertrend_timeframe = db.Column(db.String(10), default='5m')
+
+    # Order settings
+    product_order_type = db.Column(db.String(10), default='MIS')  # 'MIS' or 'NRML'
+    selected_accounts = db.Column(db.JSON)  # List of account IDs
+```
+
+### Strategy Leg Model
+
+```python
+class StrategyLeg(db.Model):
+    __tablename__ = 'strategy_legs'
+
+    id = db.Column(db.Integer, primary_key=True)
+    strategy_id = db.Column(db.Integer, db.ForeignKey('strategies.id'), nullable=False)
+    leg_number = db.Column(db.Integer, nullable=False)
+
+    # Instrument details
+    instrument = db.Column(db.String(50))  # 'NIFTY', 'BANKNIFTY', 'SENSEX'
+    product_type = db.Column(db.String(20))  # 'options', 'futures', 'equity'
+    expiry = db.Column(db.String(50))  # 'current_week', 'next_week', 'current_month'
+    action = db.Column(db.String(10))  # 'BUY', 'SELL'
+
+    # Option specifics
+    option_type = db.Column(db.String(10))  # 'CE', 'PE'
+    strike_selection = db.Column(db.String(50))  # 'ATM', 'OTM', 'ITM', 'strike_price', 'premium_near'
+    strike_offset = db.Column(db.Integer, default=0)
+    strike_price = db.Column(db.Float)
+    premium_value = db.Column(db.Float)
+
+    # Order details
+    order_type = db.Column(db.String(20))  # 'MARKET', 'LIMIT', 'SL-MKT', 'SL-LMT'
+    lots = db.Column(db.Integer, default=1)
+
+    # Exit conditions
+    stop_loss_type = db.Column(db.String(20))  # 'percentage', 'points', 'premium'
+    stop_loss_value = db.Column(db.Float)
+    take_profit_type = db.Column(db.String(20))
+    take_profit_value = db.Column(db.Float)
+    enable_trailing = db.Column(db.Boolean, default=False)
+```
+
+## 12. Supertrend Indicator Implementation
+
+### Numba-Optimized Supertrend (Pine Script v6 Compatible)
+
+```python
+# app/utils/supertrend.py
+import numpy as np
+import talib
+from numba import njit
+
+def calculate_supertrend(high, low, close, period=7, multiplier=3.0):
+    """
+    Calculate Supertrend indicator matching Pine Script v6 implementation.
+    Uses Numba for performance optimization.
+    """
+    # Ensure numpy arrays
+    high = np.asarray(high, dtype=np.float64)
+    low = np.asarray(low, dtype=np.float64)
+    close = np.asarray(close, dtype=np.float64)
+
+    # Calculate ATR using TA-Lib (RMA-based, matching Pine Script)
+    atr = talib.ATR(high, low, close, timeperiod=period)
+
+    # Calculate basic bands
+    hl2 = (high + low) / 2
+    basic_upper = hl2 + (multiplier * atr)
+    basic_lower = hl2 - (multiplier * atr)
+
+    # Use Numba-optimized core calculation
+    upper_band, lower_band, supertrend, direction = _supertrend_core(
+        close, basic_upper, basic_lower, atr
+    )
+
+    return supertrend, direction, upper_band, lower_band
+
+@njit
+def _supertrend_core(close, basic_upper, basic_lower, atr):
+    """Numba-optimized core Supertrend calculation"""
+    n = len(close)
+    upper_band = np.empty(n)
+    lower_band = np.empty(n)
+    supertrend = np.empty(n)
+    direction = np.empty(n, dtype=np.int32)
+
+    # Find first valid index (after ATR warmup)
+    first_valid = -1
+    for i in range(n):
+        if not np.isnan(atr[i]):
+            first_valid = i
+            break
+
+    if first_valid == -1:
+        return upper_band, lower_band, supertrend, direction
+
+    # Initialize first valid bar
+    upper_band[first_valid] = basic_upper[first_valid]
+    lower_band[first_valid] = basic_lower[first_valid]
+    direction[first_valid] = 1  # Start bearish (Pine Script convention)
+    supertrend[first_valid] = upper_band[first_valid]
+
+    # Calculate subsequent bars
+    for i in range(first_valid + 1, n):
+        if np.isnan(atr[i]):
+            continue
+
+        prev_upper = upper_band[i - 1]
+        prev_lower = lower_band[i - 1]
+        prev_close = close[i - 1]
+
+        # Adjust upper band (only if previous was valid)
+        if not np.isnan(prev_upper) and basic_upper[i] < prev_upper:
+            upper_band[i] = basic_upper[i]
+        elif not np.isnan(prev_upper) and prev_close > prev_upper:
+            upper_band[i] = basic_upper[i]
+        else:
+            upper_band[i] = prev_upper if not np.isnan(prev_upper) else basic_upper[i]
+
+        # Adjust lower band
+        if not np.isnan(prev_lower) and basic_lower[i] > prev_lower:
+            lower_band[i] = basic_lower[i]
+        elif not np.isnan(prev_lower) and prev_close < prev_lower:
+            lower_band[i] = basic_lower[i]
+        else:
+            lower_band[i] = prev_lower if not np.isnan(prev_lower) else basic_lower[i]
+
+        # Determine direction
+        prev_dir = direction[i - 1]
+        if prev_dir == -1 and close[i] > upper_band[i]:
+            direction[i] = 1  # Bullish
+        elif prev_dir == 1 and close[i] < lower_band[i]:
+            direction[i] = -1  # Bearish
+        else:
+            direction[i] = prev_dir
+
+        # Set supertrend value
+        supertrend[i] = lower_band[i] if direction[i] == 1 else upper_band[i]
+
+    return upper_band, lower_band, supertrend, direction
+```
+
+## 13. Margin Calculator Implementation
+
+### Dynamic Lot Sizing
+
+```python
+# app/utils/margin_calculator.py
+class MarginCalculator:
+    """Calculate optimal lot sizes based on available margin and risk profile"""
+
+    def calculate_lots_for_strategy(self, user_id, strategy, account_id):
+        """
+        Calculate lots based on:
+        1. Available margin in account
+        2. Trade quality grade (A/B/C)
+        3. Margin requirement for instrument
+        4. Expiry vs non-expiry day
+        """
+        # Get account funds
+        account = TradingAccount.query.get(account_id)
+        client = ExtendedOpenAlgoAPI(
+            api_key=account.get_api_key(),
+            host=account.host_url
+        )
+        funds = client.funds()
+        available_margin = funds.get('availablecash', 0)
+
+        # Get trade quality percentage
+        quality_grade = strategy.risk_profile  # 'A', 'B', 'C'
+        quality = TradeQuality.query.filter_by(
+            user_id=user_id,
+            quality_grade=quality_grade
+        ).first()
+
+        if not quality:
+            TradeQuality.get_or_create_defaults(user_id)
+            quality = TradeQuality.query.filter_by(
+                user_id=user_id,
+                quality_grade=quality_grade
+            ).first()
+
+        usable_margin = available_margin * (quality.margin_percentage / 100)
+
+        # Get margin requirement per lot
+        is_expiry = self._is_expiry_day()
+        margin_per_lot = self._get_margin_requirement(
+            user_id,
+            strategy.instrument,
+            strategy.trade_type,
+            is_expiry
+        )
+
+        # Calculate lots
+        calculated_lots = int(usable_margin / margin_per_lot)
+
+        # Apply freeze quantity limit
+        settings = TradingSettings.query.filter_by(
+            user_id=user_id,
+            symbol=strategy.instrument
+        ).first()
+
+        if settings:
+            max_lots = settings.max_lots_per_order
+            calculated_lots = min(calculated_lots, max_lots)
+
+        return max(1, calculated_lots)
+
+    def _get_margin_requirement(self, user_id, instrument, trade_type, is_expiry):
+        """Get margin requirement from user's saved settings"""
+        margin_req = MarginRequirement.query.filter_by(
+            user_id=user_id,
+            instrument=instrument
+        ).first()
+
+        if not margin_req:
+            MarginRequirement.get_or_create_defaults(user_id)
+            margin_req = MarginRequirement.query.filter_by(
+                user_id=user_id,
+                instrument=instrument
+            ).first()
+
+        # Select appropriate margin based on trade type and expiry
+        if trade_type == 'ce_pe_sell':
+            return margin_req.ce_pe_sell_expiry if is_expiry else margin_req.ce_pe_sell_non_expiry
+        elif trade_type == 'ce_and_pe_sell':
+            return margin_req.ce_and_pe_sell_expiry if is_expiry else margin_req.ce_and_pe_sell_non_expiry
+        elif trade_type == 'futures':
+            return margin_req.futures_expiry if is_expiry else margin_req.futures_non_expiry
+
+        return 250000  # Default fallback
+```
+
+## 14. Risk Event Tracking
+
+### Risk Event Model
+
+```python
+# app/models.py
+class RiskEvent(db.Model):
+    """Audit log for risk threshold triggers"""
+    __tablename__ = 'risk_events'
+
+    id = db.Column(db.Integer, primary_key=True)
+    strategy_id = db.Column(db.Integer, db.ForeignKey('strategies.id'), nullable=False)
+    execution_id = db.Column(db.Integer, db.ForeignKey('strategy_executions.id'), nullable=True)
+    event_type = db.Column(db.String(50), nullable=False)  # 'max_loss', 'max_profit', 'trailing_sl', 'supertrend'
+    threshold_value = db.Column(db.Float)  # The threshold that was breached
+    current_value = db.Column(db.Float)  # Current P&L or price
+    action_taken = db.Column(db.String(50))  # 'close_all', 'close_partial', 'alert_only'
+    exit_order_ids = db.Column(db.JSON)  # List of exit orders placed
+    triggered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text)
+
+    # Relationships
+    strategy = db.relationship('Strategy', backref='risk_events')
+    execution = db.relationship('StrategyExecution', backref='risk_events')
+```
+
+### Risk Event Logging
+
+```python
+def log_risk_event(strategy_id, event_type, threshold, current_value, action, order_ids=None):
+    """Log a risk threshold breach event"""
+    event = RiskEvent(
+        strategy_id=strategy_id,
+        event_type=event_type,
+        threshold_value=threshold,
+        current_value=current_value,
+        action_taken=action,
+        exit_order_ids=order_ids,
+        triggered_at=datetime.utcnow()
+    )
+    db.session.add(event)
+    db.session.commit()
+
+    logger.info(f"Risk event logged: {event_type} for strategy {strategy_id}, "
+                f"threshold={threshold}, current={current_value}, action={action}")
+
+    return event
+```
+
+## 15. Trade Quality Grades
+
+### Trade Quality Model
+
+```python
+class TradeQuality(db.Model):
+    """Configurable trade quality grades for margin utilization"""
+    __tablename__ = 'trade_qualities'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    quality_grade = db.Column(db.String(10), nullable=False)  # 'A', 'B', 'C'
+    margin_percentage = db.Column(db.Float, nullable=False)  # 95%, 65%, 36%
+    risk_level = db.Column(db.String(20))  # 'conservative', 'moderate', 'aggressive'
+    description = db.Column(db.Text)
+
+    @staticmethod
+    def get_or_create_defaults(user_id):
+        """Create default trade qualities: A=95%, B=65%, C=36%"""
+        defaults = [
+            {'quality_grade': 'A', 'margin_percentage': 95.0, 'risk_level': 'conservative'},
+            {'quality_grade': 'B', 'margin_percentage': 65.0, 'risk_level': 'moderate'},
+            {'quality_grade': 'C', 'margin_percentage': 36.0, 'risk_level': 'aggressive'}
+        ]
+
+        for default in defaults:
+            quality = TradeQuality.query.filter_by(
+                user_id=user_id,
+                quality_grade=default['quality_grade']
+            ).first()
+
+            if not quality:
+                quality = TradeQuality(user_id=user_id, **default)
+                db.session.add(quality)
+
+        db.session.commit()
+```
+
+This comprehensive features implementation guide provides all the necessary code and instructions to build AlgoMirror's complete functionality including strategy building, Supertrend indicator, margin calculation, and risk management.

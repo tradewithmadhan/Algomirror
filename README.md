@@ -1,180 +1,413 @@
-# 🏢 AlgoMirror - Enterprise Multi-Account OpenAlgo Management Platform
+# AlgoMirror - Enterprise Multi-Account OpenAlgo Management Platform
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/openflare/algomirror)
+[![Version](https://img.shields.io/badge/version-2.0.0-blue.svg)](https://github.com/openflare/algomirror)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.8+-green.svg)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/python-3.9+-green.svg)](https://www.python.org/)
 [![Flask](https://img.shields.io/badge/flask-3.0+-lightgrey.svg)](https://flask.palletsprojects.com/)
 [![OpenAlgo](https://img.shields.io/badge/openalgo-compatible-orange.svg)](https://openalgo.in)
 
-> **Enterprise-grade multi-account management platform for OpenAlgo trading applications**
+> **Enterprise-grade multi-account management platform for OpenAlgo with strategy building, risk management, and real-time analytics**
 
-AlgoMirror is a proprietary, secure, and scalable multi-account management platform developed by **OpenFlare Technologies**. It provides traders and institutions with a unified interface to manage multiple OpenAlgo trading accounts across different brokers, featuring advanced security, real-time monitoring, and comprehensive analytics.
-
-## 🎯 **Why AlgoMirror?**
-
-- **🔒 Zero-Trust Security** - No default accounts, first user becomes admin
-- **⚡ Enterprise Performance** - Multi-tier rate limiting and optimized queries  
-- **🏢 Multi-Account Management** - Unlimited accounts across different brokers
-- **🔐 Bank-Level Encryption** - Fernet encryption for all sensitive data
-- **📊 Real-Time Analytics** - Aggregated P&L, positions, and performance metrics
-- **🎨 Native OpenAlgo UI** - Exact design language matching OpenAlgo
+AlgoMirror is a proprietary, secure, and scalable multi-account management platform developed by **OpenFlare Technologies**. It provides traders with a unified interface to manage multiple OpenAlgo trading accounts across 22+ brokers, featuring advanced strategy building, Supertrend-based exits, dynamic margin calculation, and comprehensive risk management.
 
 ---
 
-## 🌟 **Key Features**
+## Table of Contents
 
-### 🛡️ **Advanced Security Architecture**
-- **Zero Default Accounts** - First registered user automatically becomes admin
-- **Fernet Encryption** - Military-grade AES 128 encryption for API keys
-- **Multi-Tier Rate Limiting** - Prevents abuse with intelligent throttling
-- **CSRF Protection** - Complete protection against cross-site request forgery
-- **Content Security Policy** - XSS prevention with strict CSP headers
-- **Audit Logging** - JSON-structured activity logs for compliance
-- **Session Security** - HTTPOnly, Secure, SameSite cookie protection
-
-### 📈 **Trading & Account Management**
-- **Multi-Broker Support** - 22+ supported brokers via OpenAlgo
-- **Real-Time Synchronization** - Live data updates with WebSocket support
-- **Unified Dashboard** - Aggregated metrics across all accounts
-- **Position Tracking** - Real-time P&L calculations and portfolio monitoring
-- **Order Management** - Order book and trade book across multiple accounts
-- **Holdings Analysis** - Investment portfolio performance and analytics
-- **Connection Testing** - Built-in ping API for connection validation
-
-### 🎨 **User Experience**
-- **OpenAlgo Theme Matching** - Pixel-perfect UI consistency
-- **Dark/Light Mode** - Automatic theme detection and switching
-- **Mobile Responsive** - Fully optimized for all device types
-- **Progressive Web App** - Fast loading with modern web standards
-- **Intuitive Navigation** - Clean, organized interface design
-
-### 🏗️ **Enterprise Architecture**
-- **Blueprint Organization** - Modular Flask application structure
-- **Database Migrations** - Flask-Migrate for schema versioning
-- **Background Tasks** - Async operations for heavy computations
-- **Caching Layer** - Redis integration for performance optimization
-- **Production Ready** - Gunicorn, nginx, SSL/TLS support
+- [Key Features](#key-features)
+- [What's New in v2.0](#whats-new-in-v20)
+- [Prerequisites](#prerequisites)
+- [Quick Start Guide](#quick-start-guide)
+- [Strategy Builder](#strategy-builder)
+- [Risk Management](#risk-management)
+- [Margin Calculator](#margin-calculator)
+- [Supertrend Indicator](#supertrend-indicator)
+- [OpenAlgo Integration](#openalgo-integration)
+- [Project Architecture](#project-architecture)
+- [Configuration Reference](#configuration-reference)
+- [Production Deployment](#production-deployment)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
 ---
 
-## 📋 **Prerequisites**
+## Key Features
+
+### Multi-Account Management
+- Unified dashboard for unlimited trading accounts across 22+ brokers
+- Primary/secondary account hierarchy with automatic failover
+- Real-time synchronization and live updates across all accounts
+- Cross-broker support with seamless switching
+
+### Strategy Builder
+- Visual strategy construction with multi-leg support
+- Instrument support: NIFTY, BANKNIFTY, SENSEX options and futures
+- Strike selection: ATM, ITM, OTM with configurable offsets, or premium-based
+- Risk profiles: Fixed lots, Conservative (40%), Balanced (65%), Aggressive (80%)
+- Entry/exit timing with automatic square-off
+
+### Risk Management
+- Max loss and max profit targets with automatic exits
+- Trailing stop loss (percentage, points, or amount-based)
+- Supertrend-based exits (breakout/breakdown signals)
+- Risk event audit logging for compliance
+- Position-level and strategy-level P&L tracking
+
+### Dynamic Margin Calculator
+- Automatic lot sizing based on available margin
+- Trade quality grades: A (95%), B (65%), C (36%) margin utilization
+- Expiry vs non-expiry margin awareness
+- Freeze quantity handling with automatic order splitting
+
+### Technical Analysis
+- Pine Script v6 compatible Supertrend indicator
+- Numba-optimized calculations for performance
+- Configurable period, multiplier, and timeframe
+- Real-time exit signal monitoring
+
+### Enterprise Security
+- Zero-trust architecture with no default accounts
+- AES-128 Fernet encryption for all API keys
+- Multi-tier rate limiting protection
+- Comprehensive audit logging
+- CSRF protection and Content Security Policy
+
+---
+
+## What's New in v2.0
+
+### Strategy Builder
+- Complete visual strategy builder with multi-leg support
+- Support for options (CE/PE), futures, and equity instruments
+- Multiple strike selection methods including premium-near
+- Strategy templates for quick deployment
+
+### Supertrend Integration
+- Pine Script v6 compatible implementation using TA-Lib ATR
+- Numba JIT compilation for high-performance calculations
+- Background exit monitoring service
+- Breakout and breakdown exit types
+
+### Margin & Risk Management
+- Dynamic lot sizing based on account margin and trade quality
+- Configurable margin requirements per instrument
+- Trade quality grades (A/B/C) for position sizing
+- Risk event logging and audit trail
+
+### Technical Improvements
+- Native Python threading (moved from eventlet for Python 3.13+ compatibility)
+- Gthread worker for Gunicorn in production
+- Background order status polling
+- UV package manager support (10-100x faster than pip)
+
+### New Instruments
+- SENSEX options and futures support added
+- Updated lot sizes and freeze quantities for 2025
+
+---
+
+## Prerequisites
 
 | Requirement | Version | Purpose |
 |-------------|---------|---------|
-| **Python** | 3.8+ | Core runtime |
-| **Node.js** | 14+ | CSS build system (Tailwind) |
-| **OpenAlgo** | Latest | Trading platform integration |
-| **SQLite** | Built-in | Development database |
-| **PostgreSQL** | 12+ | Production database (recommended) |
-| **Redis** | 6+ | Session storage & rate limiting (optional) |
+| Python | 3.9+ | Core runtime |
+| Node.js | 14+ | CSS build system (Tailwind) |
+| OpenAlgo | Latest | Trading platform integration |
+| SQLite | Built-in | Development database |
+| PostgreSQL | 12+ | Production database (recommended) |
+| Redis | 6+ | Session storage & rate limiting (optional) |
+| TA-Lib | Latest | Technical analysis library |
+
+### Installing TA-Lib
+
+**Windows:**
+Download pre-built binaries from [TA-Lib Windows](https://github.com/cgohlke/talib-build/releases)
+
+**Linux/macOS:**
+```bash
+# Ubuntu/Debian
+sudo apt-get install ta-lib
+
+# macOS
+brew install ta-lib
+```
 
 ---
 
-## 🚀 **Quick Start Guide**
+## Quick Start Guide
 
-### 1️⃣ **Environment Setup**
+### Method 1: Using UV (Recommended - 10-100x Faster)
+
 ```bash
-# Clone the repository
+# Install UV (if not already installed)
+# Windows PowerShell
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone repository
 git clone https://github.com/openflare/algomirror.git
-cd Algomirror
+cd algomirror
 
-# Create virtual environment (Windows)
-python -m venv venv
-venv\Scripts\activate
+# Create and activate virtual environment
+uv venv
+.venv\Scripts\activate      # Windows
+source .venv/bin/activate   # macOS/Linux
 
-# Create virtual environment (macOS/Linux)  
-python3 -m venv venv
-source venv/bin/activate
-```
+# Install dependencies
+uv pip install -e .
 
-### 2️⃣ **Install Dependencies**
-```bash
-# Install Python packages
-pip install -r requirements.txt
+# Install with development dependencies
+uv pip install -e ".[dev]"
 
-# Install Node.js dependencies and build CSS
+# Install Node dependencies and build CSS
 npm install
 npm run build-css
-```
 
-### 3️⃣ **Configure Environment**
-```bash
-# Copy environment template
+# Configure environment
 cp .env.example .env
+# Edit .env with your settings
 
-# Edit configuration (required)
-nano .env
-```
-
-**Essential `.env` Configuration:**
-```env
-SECRET_KEY=your-super-secret-key-here-change-this
-DATABASE_URL=sqlite:///instance/algomirror.db
-FLASK_ENV=development
-LOG_LEVEL=INFO
-ENCRYPTION_KEY=auto-generated-or-provide-your-own
-```
-
-### 4️⃣ **Initialize Database**
-```bash
-# Create database schema
+# Initialize database
 python init_db.py
 
-# Optional: Create test data (development only)
-python init_db.py testdata
-```
-
-### 5️⃣ **Launch Application**
-```bash
-# Start the development server
+# Run application
 python app.py
-
 # Application available at: http://localhost:8000
 ```
 
-### 6️⃣ **First Login**
+### Method 2: Using pip (Traditional)
+
+```bash
+# Clone repository
+git clone https://github.com/openflare/algomirror.git
+cd algomirror
+
+# Create and activate virtual environment
+python -m venv venv
+venv\Scripts\activate       # Windows
+source venv/bin/activate    # macOS/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install Node dependencies and build CSS
+npm install
+npm run build-css
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your settings
+
+# Initialize database
+python init_db.py
+
+# Run application
+python app.py
+```
+
+### First Login
+
 1. Navigate to `http://localhost:8000`
-2. Click **"Get Started"** to register
-3. **First user automatically becomes admin** 🔐
+2. Click "Get Started" to register
+3. **First user automatically becomes admin** (zero-trust security)
 4. Login and start adding your OpenAlgo accounts
 
 ---
 
-## 👤 **User Management & Security**
+## Strategy Builder
 
-### 🔐 **Zero-Trust Authentication**
-- **No Default Accounts** - Enhanced security by design
-- **First User = Admin** - Automatic admin privileges for first registration
-- **Strong Password Policy** - Enforced complexity requirements
-- **Session Management** - 24-hour session lifetime with secure cookies
+### Creating a Strategy
 
-### 🛡️ **Password Requirements**
-- ✅ Minimum 8 characters
-- ✅ At least one uppercase letter (A-Z)
-- ✅ At least one lowercase letter (a-z)  
-- ✅ At least one number (0-9)
-- ✅ At least one special character (`!@#$%^&*()_+-=[]{}|;:,.<>?`)
-- ❌ Cannot be common passwords (password, 123456, etc.)
+1. Navigate to **Strategy** > **Builder**
+2. Configure basic information:
+   - Strategy name and description
+   - Market condition (Expiry/Non-Expiry/Any)
+   - Risk profile (Fixed Lots, Balanced, Conservative, Aggressive)
+   - Entry/Exit/Square-off times
 
-### ⚡ **Rate Limiting Protection**
+3. Add strategy legs:
+   - Select instrument (NIFTY, BANKNIFTY, SENSEX)
+   - Choose product type (Options, Futures)
+   - Configure strike selection (ATM, ITM, OTM with offset)
+   - Set action (BUY/SELL) and lots
 
-| Endpoint Category | Rate Limit | Purpose |
-|------------------|------------|---------|
-| **Global** | 1000/minute | Overall IP protection |
-| **Authentication** | 10/minute | Login/register/password |
-| **API Data** | 100/minute | Trading data retrieval |
-| **Heavy Operations** | 20/minute | Connection tests/data refresh |
+4. Configure risk management:
+   - Max loss and max profit targets
+   - Trailing stop loss settings
+   - Supertrend exit configuration
+
+5. Select accounts for execution
+
+### Risk Profile Options
+
+| Profile | Margin Usage | Description |
+|---------|--------------|-------------|
+| Fixed Lots | Manual | Uses explicit lot sizes from strategy legs |
+| Conservative | 40% | Lower risk with smaller positions |
+| Balanced | 65% | Moderate approach (default) |
+| Aggressive | 80% | Higher risk with larger positions |
+
+### Strike Selection Methods
+
+- **ATM**: At-the-money strike
+- **ITM**: In-the-money with configurable offset
+- **OTM**: Out-of-the-money with configurable offset
+- **Strike Price**: Specific strike price value
+- **Premium Near**: Strike nearest to specified premium
 
 ---
 
-## 🔧 **OpenAlgo Account Integration**
+## Risk Management
 
-### 📊 **Supported Brokers (22+)**
+### Strategy-Level Risk Controls
+
+```
+Max Loss Target:
+- Set maximum loss threshold for entire strategy
+- Automatic exit when threshold breached
+- Configurable auto-exit on/off
+
+Max Profit Target:
+- Set profit target for strategy
+- Automatic exit on target hit
+- Lock in profits automatically
+
+Trailing Stop Loss:
+- Types: Percentage, Points, Amount
+- Activates after position in profit
+- Trails as profit increases
+```
+
+### Supertrend-Based Exits
+
+Configure Supertrend exits in strategy settings:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Period | 7 | ATR calculation period |
+| Multiplier | 3.0 | Band multiplier |
+| Timeframe | 5m | Candle timeframe |
+| Exit Type | breakout | Exit on breakout or breakdown |
+
+Exit signals:
+- **Breakout**: Exit when price crosses above upper band (bullish)
+- **Breakdown**: Exit when price crosses below lower band (bearish)
+
+### Risk Event Logging
+
+All risk threshold breaches are logged:
+
+```
+Event Types:
+- max_loss: Maximum loss threshold hit
+- max_profit: Profit target achieved
+- trailing_sl: Trailing stop loss triggered
+- supertrend: Supertrend exit signal
+
+Logged Information:
+- Strategy and execution IDs
+- Threshold and current values
+- Action taken (close_all, close_partial, alert_only)
+- Exit order IDs
+- Timestamp
+```
+
+---
+
+## Margin Calculator
+
+### How It Works
+
+1. **Get Available Margin**: Fetches from account via OpenAlgo API
+2. **Apply Trade Quality**: Multiplies by grade percentage (A=95%, B=65%, C=36%)
+3. **Get Margin Requirement**: Based on instrument and expiry/non-expiry
+4. **Calculate Lots**: Usable margin / margin per lot
+5. **Apply Freeze Limit**: Cap at max_lots_per_order from settings
+
+### Trade Quality Grades
+
+| Grade | Margin % | Risk Level | Description |
+|-------|----------|------------|-------------|
+| A | 95% | Conservative | Maximum margin utilization |
+| B | 65% | Moderate | Balanced approach |
+| C | 36% | Aggressive | Lower capital deployment |
+
+### Default Margin Requirements (per lot)
+
+**NIFTY/BANKNIFTY:**
+| Trade Type | Expiry | Non-Expiry |
+|------------|--------|------------|
+| CE/PE Sell | 205,000 | 250,000 |
+| CE & PE Sell | 250,000 | 320,000 |
+| Futures | 215,000 | 215,000 |
+
+**SENSEX:**
+| Trade Type | Expiry | Non-Expiry |
+|------------|--------|------------|
+| CE/PE Sell | 180,000 | 220,000 |
+| CE & PE Sell | 225,000 | 290,000 |
+| Futures | 185,000 | 185,000 |
+
+### Trading Settings (Lot Sizes as of 2025)
+
+| Symbol | Lot Size | Freeze Qty | Max Lots/Order |
+|--------|----------|------------|----------------|
+| NIFTY | 75 | 1,800 | 24 |
+| BANKNIFTY | 35 | 900 | 25 |
+| SENSEX | 20 | 1,000 | 50 |
+
+---
+
+## Supertrend Indicator
+
+### Implementation Details
+
+AlgoMirror uses a Pine Script v6 compatible Supertrend implementation:
+
+```python
+# Key characteristics:
+- Uses TA-Lib ATR (RMA-based, matching Pine Script ta.atr)
+- Numba JIT compilation for performance
+- Handles NaN values from ATR warmup period
+- Direction: 1 = Bullish (use lower band), -1 = Bearish (use upper band)
+```
+
+### Calculation Formula
+
+```
+ATR = ta.atr(period)  # TA-Lib RMA-based ATR
+HL2 = (High + Low) / 2
+
+Basic Upper Band = HL2 + (Multiplier * ATR)
+Basic Lower Band = HL2 - (Multiplier * ATR)
+
+Final Bands adjusted based on previous close and bands
+Direction changes when close crosses bands
+```
+
+### Background Exit Service
+
+The Supertrend Exit Service runs as a daemon thread:
+
+1. Monitors active strategies with Supertrend exits enabled
+2. Fetches OHLC data at configured intervals
+3. Calculates Supertrend and checks for direction changes
+4. Triggers automatic exits on signal
+5. Logs risk events for audit trail
+
+---
+
+## OpenAlgo Integration
+
+### Supported Brokers (22+)
+
 - 5paisa & 5paisa (XTS)
 - Aliceblue
-- AngelOne  
+- AngelOne
 - Compositedge (XTS)
-- Dhan & Dhan(Sandbox)
+- Dhan & Dhan (Sandbox)
 - Firstock
 - Flattrade
 - Fyers
@@ -191,243 +424,11 @@ python app.py
 - Zebu
 - Zerodha
 
-### ➕ **Adding New Accounts**
-
-1. **Prerequisites Checklist:**
-   - ✅ OpenAlgo application is running on target host
-   - ✅ Valid API key obtained from OpenAlgo dashboard
-   - ✅ Correct host URL (e.g., `http://127.0.0.1:5000`)
-   - ✅ WebSocket URL configured (e.g., `ws://127.0.0.1:8765`)
-
-2. **Add Account Process:**
-   - Navigate to **Accounts** → **Add Account**
-   - Choose broker from dropdown (auto-detected via ping API)
-   - Enter connection details and API key
-   - **Test Connection** button validates before saving
-   - Account automatically connects and syncs data
-
-### 🔍 **Connection Validation**
-AlgoMirror uses the OpenAlgo **ping API** for connection testing:
-```bash
-# Manual ping test
-curl -X POST http://127.0.0.1:5000/api/v1/ping \
-  -H "Content-Type: application/json" \
-  -d '{"apikey":"your_api_key_here"}'
-
-# Expected response
-{
-  "status": "success",
-  "data": {
-    "broker": "upstox",
-    "message": "pong"
-  }
-}
-```
-
----
-
-## 📁 **Project Architecture**
-
-### 🏗️ **Directory Structure**
-```
-AlgoMirror/
-├── 📁 app/                          # Main application package
-│   ├── 🐍 __init__.py              # Flask app factory + security config
-│   ├── 🗄️ models.py                # SQLAlchemy database models
-│   ├── 📁 auth/                    # Authentication blueprint
-│   │   ├── 🐍 routes.py            # Login, register, password management
-│   │   └── 📝 forms.py             # WTForms validation
-│   ├── 📁 main/                    # Dashboard and landing pages
-│   │   └── 🐍 routes.py            # Home and dashboard routes
-│   ├── 📁 accounts/                # Account management
-│   │   ├── 🐍 routes.py            # CRUD operations, connection testing
-│   │   └── 📝 forms.py             # Account forms with broker validation
-│   ├── 📁 trading/                 # Trading features
-│   │   └── 🐍 routes.py            # Funds, positions, orders, holdings
-│   ├── 📁 api/                     # REST API endpoints
-│   │   └── 🐍 routes.py            # API data endpoints
-│   ├── 📁 utils/                   # Utility functions
-│   │   ├── 🔧 rate_limiter.py      # Multi-tier rate limiting
-│   │   └── 🔌 openalgo_client.py   # Extended OpenAlgo API client
-│   ├── 📁 templates/               # Jinja2 HTML templates
-│   │   ├── 🎨 base.html            # Core HTML structure & theme
-│   │   ├── 🖼️ layout.html          # Auth/non-auth layouts
-│   │   ├── 📁 auth/               # Authentication templates
-│   │   ├── 📁 main/               # Dashboard templates
-│   │   ├── 📁 accounts/           # Account management templates
-│   │   └── 📁 trading/            # Trading feature templates
-│   └── 📁 static/                  # Static assets
-│       ├── 🎨 css/                # Compiled Tailwind CSS
-│       ├── 🖼️ favicon/            # App icons and favicons
-│       └── 📱 js/                 # Client-side JavaScript
-├── 🗄️ migrations/                  # Database migrations (Flask-Migrate)
-├── 📊 logs/                        # Application logs (auto-created)
-├── ⚙️ config.py                   # Application configuration
-├── 🚀 app.py                      # Application entry point
-├── 🛠️ init_db.py                  # Database initialization utility
-└── 📦 requirements.txt            # Python dependencies
-```
-
-### 🎨 **Frontend Technology Stack**
-- **Tailwind CSS** - Utility-first CSS framework
-- **DaisyUI** - Component library with OpenAlgo theming
-- **Heroicons** - Consistent icon system
-- **Socket.IO** - Real-time WebSocket communication
-- **Vanilla JavaScript** - Lightweight client-side interactions
-
-### 🛢️ **Database Schema**
-
-#### **Core Models:**
-- **`User`** - User accounts with admin/regular roles
-- **`TradingAccount`** - OpenAlgo account connections (encrypted API keys)
-- **`ActivityLog`** - Audit trail for all user actions
-- **`Order`** - Order history and tracking
-- **`Position`** - Current positions with P&L
-- **`Holding`** - Long-term holdings and performance
-
-#### **Security Features:**
-- **Fernet Encryption** - API keys encrypted at rest
-- **Unique Constraints** - Prevent duplicate accounts
-- **Foreign Key Relationships** - Data integrity enforcement
-- **JSON Columns** - Flexible metadata storage
-
----
-
-## 🛠️ **Development Workflow**
-
-### 🔄 **CSS Development**
-```bash
-# Watch for changes during development
-npm run watch-css
-
-# Build for production
-npm run build-css
-```
-
-### 🗄️ **Database Management**
-```bash
-# Initialize fresh database
-python init_db.py
-
-# Reset database (⚠️ deletes all data)
-python init_db.py reset
-
-# Create test data (development only)
-python init_db.py testdata
-
-# Create migration after model changes
-flask db migrate -m "Description of changes"
-
-# Apply migrations
-flask db upgrade
-```
-
-### 🔍 **Debugging & Monitoring**
-```bash
-# Enable debug logging
-export LOG_LEVEL=DEBUG
-python app.py
-
-# Check application health
-curl http://localhost:8000/api/health
-
-# Monitor rate limits
-curl -I http://localhost:8000/api/some-endpoint
-# Look for X-RateLimit-* headers
-```
-
-### 🧪 **Testing Connection Issues**
-```bash
-# Test OpenAlgo server availability
-curl http://127.0.0.1:5000
-
-# Test ping API endpoint
-curl -X POST http://127.0.0.1:5000/api/v1/ping \
-  -H "Content-Type: application/json" \
-  -d '{"apikey":"your_api_key"}'
-
-# Expected successful response:
-# {"status":"success","data":{"broker":"upstox","message":"pong"}}
-
-# Common error responses:
-# 404 - API endpoint not available (OpenAlgo not running properly)
-# 403 - Invalid API key
-# Connection timeout - Server not accessible
-```
-
----
-
-## 🚀 **Production Deployment**
-
-### 🏢 **Production Requirements**
-- **PostgreSQL** - Scalable relational database
-- **Redis** - Session storage and rate limiting
-- **Nginx/Apache** - Reverse proxy and load balancing
-- **SSL Certificate** - HTTPS encryption (Let's Encrypt recommended)
-- **Systemd/Docker** - Process management
-
-### ⚙️ **Production Configuration**
-```env
-# Production .env
-SECRET_KEY=randomly-generated-256-bit-key
-DATABASE_URL=postgresql://user:password@localhost/algomirror_prod
-REDIS_URL=redis://localhost:6379/0
-FLASK_ENV=production
-SESSION_TYPE=redis
-LOG_LEVEL=WARNING
-```
-
-### 🐳 **Docker Deployment**
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-COPY . .
-EXPOSE 8000
-CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8000", "app:app"]
-```
-
-### 🌐 **Nginx Configuration**
-```nginx
-server {
-    listen 443 ssl http2;
-    server_name algomirror.yourdomain.com;
-    
-    ssl_certificate /etc/letsencrypt/live/algomirror.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/algomirror.yourdomain.com/privkey.pem;
-    
-    # Security headers
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Frame-Options "DENY" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # WebSocket support
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-```
-
----
-
-## 📊 **API Integration & Usage**
-
-### 🔌 **OpenAlgo SDK Integration**
-AlgoMirror uses the official OpenAlgo Python SDK with custom extensions:
+### Extended OpenAlgo Client
 
 ```python
 from app.utils.openalgo_client import ExtendedOpenAlgoAPI
 
-# Initialize client with ping support
 client = ExtendedOpenAlgoAPI(
     api_key='your_api_key',
     host='http://127.0.0.1:5000'
@@ -438,283 +439,313 @@ ping_response = client.ping()
 
 # Standard OpenAlgo operations
 funds = client.funds()
-positions = client.positionbook() 
+positions = client.positionbook()
 orders = client.orderbook()
 holdings = client.holdings()
 ```
 
-### 🔍 **Extended API Methods**
-AlgoMirror adds the following methods to the standard OpenAlgo client:
+### Connection Testing
 
-#### **`ping()` Method**
-```python
-response = client.ping()
-# Returns: {
-#   "status": "success",
-#   "data": {
-#     "broker": "upstox", 
-#     "message": "pong"
-#   }
-# }
+```bash
+curl -X POST http://127.0.0.1:5000/api/v1/ping \
+  -H "Content-Type: application/json" \
+  -d '{"apikey":"your_api_key"}'
+
+# Expected response
+{
+  "status": "success",
+  "data": {
+    "broker": "zerodha",
+    "message": "pong"
+  }
+}
 ```
-
-### 📋 **API Endpoints**
-AlgoMirror provides its own REST API for integration:
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/api/accounts` | GET | List user's trading accounts |
-| `/api/accounts/{id}/test` | POST | Test account connection |
-| `/api/accounts/{id}/refresh` | POST | Refresh account data |
-| `/api/dashboard/summary` | GET | Aggregated dashboard data |
-| `/api/health` | GET | Application health check |
 
 ---
 
-## 🔧 **Configuration Reference**
+## Project Architecture
 
-### 🌍 **Environment Variables**
+### Directory Structure
+
+```
+algomirror/
+├── app/                              # Main application package
+│   ├── __init__.py                   # Flask app factory
+│   ├── models.py                     # SQLAlchemy models
+│   ├── auth/                         # Authentication blueprint
+│   ├── main/                         # Dashboard and landing pages
+│   ├── accounts/                     # Account management
+│   ├── trading/                      # Trading operations
+│   ├── strategy/                     # Strategy builder and execution
+│   ├── margin/                       # Margin management
+│   ├── api/                          # REST API endpoints
+│   ├── utils/                        # Utility modules
+│   │   ├── openalgo_client.py        # Extended OpenAlgo client
+│   │   ├── websocket_manager.py      # WebSocket manager
+│   │   ├── supertrend.py             # Numba-optimized Supertrend
+│   │   ├── supertrend_exit_service.py # Background exit monitoring
+│   │   ├── margin_calculator.py      # Dynamic lot sizing
+│   │   ├── strategy_executor.py      # Parallel execution engine
+│   │   ├── order_status_poller.py    # Background order polling
+│   │   └── rate_limiter.py           # Rate limiting decorators
+│   ├── templates/                    # Jinja2 HTML templates
+│   └── static/                       # CSS, JS, images
+├── migrations/                       # Database migrations
+├── docs/                             # Documentation
+├── logs/                             # Application logs
+├── instance/                         # Instance-specific files
+├── config.py                         # Configuration
+├── app.py                            # Entry point
+├── init_db.py                        # Database initialization
+├── requirements.txt                  # Python dependencies
+├── pyproject.toml                    # UV/pip project config
+└── package.json                      # Node dependencies
+```
+
+### Database Models
+
+**Core Models:**
+- User - Authentication and authorization
+- TradingAccount - OpenAlgo connections with encrypted API keys
+- ActivityLog - Audit trail
+
+**Strategy Models:**
+- Strategy - Strategy configuration and settings
+- StrategyLeg - Individual legs with instrument details
+- StrategyExecution - Execution tracking and P&L
+
+**Margin & Risk Models:**
+- MarginRequirement - Instrument margin settings
+- TradeQuality - A/B/C grade configurations
+- MarginTracker - Real-time margin tracking
+- RiskEvent - Risk threshold breach audit log
+- TradingSettings - Lot sizes and freeze quantities
+
+**Configuration Models:**
+- TradingHoursTemplate - Market hours configuration
+- TradingSession - Day-wise trading sessions
+- MarketHoliday - Holiday calendar
+- WebSocketSession - Active WebSocket sessions
+
+### Threading Architecture
+
+```
+Main Application (Flask/Gunicorn gthread worker)
+└── HTTP Request Handlers
+
+Background Daemon Threads:
+├── WebSocket Manager Thread
+│   └── Connection monitoring & reconnection
+├── Supertrend Exit Service Thread
+│   └── Price monitoring for indicator-based exits
+├── Order Status Poller Thread
+│   └── Periodic order status synchronization
+└── Risk Monitor Threads (per strategy)
+    └── P&L threshold monitoring
+
+ThreadPoolExecutor (Strategy Execution):
+└── Parallel order placement across accounts
+
+Note: Uses native Python threading (not eventlet)
+Compatible with Python 3.13+ and TA-Lib
+```
+
+---
+
+## Configuration Reference
+
+### Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SECRET_KEY` | ✅ | `dev-key` | Flask session encryption key |
-| `DATABASE_URL` | ❌ | `sqlite:///algomirror.db` | Database connection string |
-| `FLASK_ENV` | ❌ | `development` | Application environment |
-| `LOG_LEVEL` | ❌ | `INFO` | Logging verbosity level |
-| `REDIS_URL` | ❌ | `memory://` | Redis connection for caching |
-| `ENCRYPTION_KEY` | ❌ | Auto-generated | Fernet encryption key |
-| `CORS_ORIGINS` | ❌ | `http://localhost:8000` | Allowed CORS origins |
+| SECRET_KEY | Yes | dev-key | Flask session encryption |
+| DATABASE_URL | No | sqlite:///algomirror.db | Database connection |
+| FLASK_ENV | No | development | Environment mode |
+| LOG_LEVEL | No | INFO | Logging verbosity |
+| REDIS_URL | No | memory:// | Redis for caching |
+| ENCRYPTION_KEY | No | Auto-generated | Fernet encryption key |
+| SESSION_TYPE | No | filesystem | Session storage type |
 
-### ⚡ **Rate Limiting Configuration**
-```python
-# config.py
-RATELIMIT_STORAGE_URL = "redis://localhost:6379/1"
-RATELIMIT_DEFAULT = "1000 per minute"
+### Rate Limiting
 
-# Custom rate limits per blueprint
-AUTH_RATE_LIMIT = "10 per minute"    # Login, register
-API_RATE_LIMIT = "100 per minute"     # Data endpoints  
-HEAVY_RATE_LIMIT = "20 per minute"   # Connection tests
+| Endpoint | Limit | Purpose |
+|----------|-------|---------|
+| Global | 1000/minute | Overall IP protection |
+| Authentication | 10/minute | Login/register/password |
+| API Data | 100/minute | Trading data retrieval |
+| Heavy Operations | 20/minute | Connection tests/refresh |
+
+### Password Policy
+
+- Minimum 8 characters
+- At least one uppercase letter (A-Z)
+- At least one lowercase letter (a-z)
+- At least one digit (0-9)
+- At least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)
+- Cannot be common passwords
+
+---
+
+## Production Deployment
+
+### Requirements
+
+- PostgreSQL database
+- Redis for caching (optional)
+- Nginx/Apache reverse proxy
+- SSL certificate (Let's Encrypt)
+- Gunicorn with gthread worker
+
+### Production Configuration
+
+```env
+SECRET_KEY=randomly-generated-256-bit-key
+DATABASE_URL=postgresql://user:password@localhost/algomirror_prod
+REDIS_URL=redis://localhost:6379/0
+FLASK_ENV=production
+SESSION_TYPE=sqlalchemy
+LOG_LEVEL=WARNING
 ```
 
-### 🛡️ **Security Configuration**
-```python
-# Content Security Policy
-CSP = {
-    'default-src': ["'self'"],
-    'script-src': ["'self'", "'unsafe-inline'", 'cdn.socket.io'],
-    'style-src': ["'self'", "'unsafe-inline'"],
-    'img-src': ["'self'", 'data:', 'https:'],
-    'connect-src': ["'self'", 'ws:', 'wss:'],
-}
+### Gunicorn Configuration
 
-# Session Configuration
-SESSION_COOKIE_SECURE = True        # HTTPS only
-SESSION_COOKIE_HTTPONLY = True     # No JS access
-SESSION_COOKIE_SAMESITE = 'Lax'    # CSRF protection
-PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
+```bash
+gunicorn -w 4 -k gthread --threads 2 -b 0.0.0.0:8000 app:app
+```
+
+### Nginx Configuration
+
+```nginx
+server {
+    listen 443 ssl http2;
+    server_name algomirror.yourdomain.com;
+
+    ssl_certificate /etc/letsencrypt/live/algomirror.yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/algomirror.yourdomain.com/privkey.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+}
 ```
 
 ---
 
-## 🐛 **Troubleshooting Guide**
+## Troubleshooting
 
-### ❌ **Common Issues & Solutions**
+### Common Issues
 
-#### **Connection Issues**
+**Connection Issues:**
 ```bash
-# Problem: "Cannot connect to OpenAlgo server"
-# Solution: Verify OpenAlgo is running and accessible
+# Verify OpenAlgo is running
 curl http://127.0.0.1:5000
 curl -X POST http://127.0.0.1:5000/api/v1/ping -d '{"apikey":"test"}'
 ```
 
-#### **API Key Issues**  
+**Database Issues:**
 ```bash
-# Problem: "Invalid OpenAlgo API key"
-# Solution: Check API key in OpenAlgo dashboard
-# Ensure key has proper permissions and is active
+python init_db.py reset  # Warning: Deletes all data
+python init_db.py
+flask db upgrade
 ```
 
-#### **Database Issues**
+**CSS/Styling Issues:**
 ```bash
-# Problem: Database connection errors
-python init_db.py reset  # ⚠️ Deletes all data
-python init_db.py        # Reinitialize
-
-# Problem: Migration errors
-flask db stamp head      # Mark current state
-flask db migrate         # Create new migration
-flask db upgrade         # Apply changes
-```
-
-#### **CSS/Styling Issues**
-```bash
-# Problem: Styles not loading
-npm run build-css       # Rebuild CSS
+npm run build-css
 # Check app/static/css/compiled.css exists
-
-# Problem: Theme not switching
-# Clear browser cache and localStorage
 ```
 
-#### **Rate Limiting Issues**
+**TA-Lib Import Errors:**
 ```bash
-# Problem: Rate limit exceeded
-# Wait for limit reset (check X-RateLimit-Reset-After header)
-# Or increase limits in config.py for development
+# Ensure TA-Lib C library is installed
+# Windows: Download from GitHub releases
+# Linux: sudo apt-get install ta-lib
+# macOS: brew install ta-lib
 ```
 
-### 📋 **Debug Checklist**
+### Debug Checklist
 
-1. **Environment Setup**
-   - [ ] Virtual environment activated
-   - [ ] All dependencies installed (`pip install -r requirements.txt`)
-   - [ ] CSS compiled (`npm run build-css`)
-   - [ ] Database initialized (`python init_db.py`)
-
-2. **OpenAlgo Integration**  
-   - [ ] OpenAlgo server running on specified host
-   - [ ] Ping API responding (`/api/v1/ping` endpoint)
-   - [ ] Valid API key with proper permissions
-   - [ ] Correct host URL format (`http://127.0.0.1:5000`)
-
-3. **Application Health**
-   - [ ] No error logs in `logs/algomirror.log`
-   - [ ] Database file exists (`instance/algomirror.db`)
-   - [ ] All required environment variables set
-   - [ ] Port 8000 not in use by other applications
+1. Virtual environment activated
+2. All dependencies installed
+3. CSS compiled (`npm run build-css`)
+4. Database initialized (`python init_db.py`)
+5. OpenAlgo server running
+6. Valid API key configured
+7. No errors in `logs/algomirror.log`
 
 ---
 
-## 📈 **Performance Optimization**
+## Database Management
 
-### 🚀 **Performance Features**
-- **Database Indexing** - Optimized queries with strategic indexes
-- **Connection Pooling** - Efficient database connection management
-- **Redis Caching** - Fast access to frequently requested data
-- **Lazy Loading** - Relationships loaded only when needed
-- **JSON Caching** - Account data cached to reduce API calls
-- **Rate Limiting** - Prevents server overload and API abuse
+```bash
+# Initialize fresh database
+python init_db.py
 
-### 📊 **Monitoring & Analytics**
-```python
-# Built-in performance monitoring
-@app.before_request
-def before_request():
-    g.start_time = time.time()
+# Reset database (deletes all data)
+python init_db.py reset
 
-@app.after_request  
-def after_request(response):
-    duration = time.time() - g.start_time
-    logger.info(f"Request completed in {duration:.3f}s")
-    return response
-```
+# Create test data (development only)
+python init_db.py testdata
 
-### 🔧 **Production Optimization**
-```python
-# config.py - Production settings
-class ProductionConfig(Config):
-    # Database connection pooling
-    SQLALCHEMY_ENGINE_OPTIONS = {
-        'pool_size': 20,
-        'pool_recycle': 3600,
-        'pool_pre_ping': True
-    }
-    
-    # Redis caching
-    CACHE_TYPE = 'redis'
-    CACHE_REDIS_URL = os.environ.get('REDIS_URL')
-    
-    # Session optimization
-    SESSION_TYPE = 'redis'
-    SESSION_PERMANENT = False
+# Create migration after model changes
+flask db migrate -m "Description"
+
+# Apply migrations
+flask db upgrade
 ```
 
 ---
 
-## 📚 **Additional Resources**
+## Version History
 
-### 🔗 **Documentation Links**
-- **OpenAlgo Documentation**: [https://docs.openalgo.in](https://docs.openalgo.in)
-- **Flask Framework**: [https://flask.palletsprojects.com](https://flask.palletsprojects.com)
-- **Tailwind CSS**: [https://tailwindcss.com](https://tailwindcss.com)
-- **DaisyUI Components**: [https://daisyui.com](https://daisyui.com)
+### v2.0.0 (Current)
+- Strategy builder with multi-leg support
+- Supertrend indicator (Pine Script v6 compatible)
+- Risk management (max loss/profit, trailing SL, Supertrend exits)
+- Dynamic margin calculator with trade quality grades
+- Parallel strategy execution with ThreadPoolExecutor
+- Background services (Supertrend exits, order polling)
+- Native Python threading (gthread worker)
+- SENSEX instrument support
+- UV package manager support
+- Risk event audit logging
 
-### 🆘 **Support Channels**
-- **GitHub Issues**: [Create Issue](https://github.com/openflare/algomirror/issues)
-- **Email Support**: support@openflare.tech
-- **Documentation**: [Internal Wiki](./docs/)
-
-### 🧪 **Development Resources**
-- **API Testing**: Use Postman collection in `./docs/postman/`
-- **Database Schema**: Visual diagram in `./docs/database-schema.png`
-- **Security Audit**: Review `./docs/security-checklist.md`
-
----
-
-## 👥 **Contributing & Licensing**
-
-### 📄 **Proprietary License**
-This software is **proprietary and confidential** property of OpenFlare Technologies.
-
-**Copyright © 2024 OpenFlare Technologies. All Rights Reserved.**
-
-- ❌ **No unauthorized copying, modification, or distribution**
-- ❌ **No reverse engineering or decompilation** 
-- ❌ **No resale or redistribution**
-- ✅ **Licensed for use per agreement terms only**
-
-### 🏢 **OpenFlare Technologies**
-- **Website**: [https://openflare.tech](https://openflare.tech)
-- **Email**: contact@openflare.tech
-- **GitHub**: [@openflare](https://github.com/openflare)
-
-### 🙏 **Acknowledgments**
-- **OpenAlgo Platform**: Foundation for algorithmic trading
-- **Flask Ecosystem**: Robust web framework and extensions
-- **Tailwind CSS & DaisyUI**: Modern UI framework and components
-- **SQLAlchemy**: Powerful ORM and database toolkit
+### v1.0.0
+- Multi-account OpenAlgo integration (22+ brokers)
+- Zero-trust security architecture
+- Fernet encryption for API keys
+- Multi-tier rate limiting
+- Real-time dashboard
+- Mobile-responsive UI with OpenAlgo theme
 
 ---
 
-## 📊 **Version History**
+## License
 
-### 🚀 **v1.0.0** (Current)
-- ✅ Multi-account OpenAlgo integration with 22+ brokers
-- ✅ Zero-trust security architecture with no default accounts  
-- ✅ Fernet encryption for API keys and sensitive data
-- ✅ Multi-tier rate limiting with intelligent throttling
-- ✅ Real-time dashboard with aggregated analytics
-- ✅ Extended OpenAlgo client with ping API support
-- ✅ Mobile-responsive UI with OpenAlgo theme matching
-- ✅ Comprehensive audit logging and activity tracking
-- ✅ Production-ready deployment with Docker support
-- ✅ Built-in connection testing and validation
-- ✅ SQLAlchemy ORM with database migrations
-- ✅ Flask blueprint architecture for modularity
+**Proprietary Software - Copyright 2024 OpenFlare Technologies. All Rights Reserved.**
 
-### 🔮 **Planned Features** (Future Releases)
-- 📊 **Advanced Analytics** - Portfolio performance analysis
-- 🔔 **Alert System** - Real-time notifications and alerts  
-- 📱 **Mobile App** - Native iOS/Android applications
-- 🤖 **API Automation** - Webhook integrations and automation
-- 🔄 **Data Export** - CSV/Excel export functionality
-- 📈 **Backtesting** - Strategy backtesting capabilities
+This software is confidential and proprietary. Unauthorized copying, modification, or distribution is prohibited.
 
 ---
 
-<div align="center">
+## Support
 
-## 🏆 **AlgoMirror - Enterprise Trading Made Simple**
-
-**Secure • Scalable • Professional**
-
-[![OpenFlare](https://img.shields.io/badge/Built%20by-OpenFlare%20Technologies-blue?style=for-the-badge)](https://openflare.tech)
-[![OpenAlgo](https://img.shields.io/badge/Powered%20by-OpenAlgo-orange?style=for-the-badge)](https://openalgo.in)
+- **Documentation**: See `docs/` folder for detailed guides
+- **GitHub Issues**: Report bugs and feature requests
+- **Email**: support@openflare.tech
 
 ---
 
-*Copyright © 2024 OpenFlare Technologies. All Rights Reserved.*
-
-</div>
+**Built by OpenFlare Technologies | Powered by OpenAlgo**

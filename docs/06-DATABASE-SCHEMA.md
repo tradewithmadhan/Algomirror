@@ -290,12 +290,48 @@ class ActivityLog(db.Model):
 ```sql
 CREATE TABLE strategies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
     name VARCHAR(100) NOT NULL,
     description TEXT,
-    strategy_type VARCHAR(50),  -- momentum/mean_reversion/arbitrage
+    market_condition VARCHAR(50),  -- 'non_expiry', 'expiry', 'any'
+    risk_profile VARCHAR(50),  -- 'fixed_lots', 'balanced', 'conservative', 'aggressive'
     is_active BOOLEAN DEFAULT TRUE,
+    is_template BOOLEAN DEFAULT FALSE,
+
+    -- Timing settings
+    entry_time TIME,
+    exit_time TIME,
+    square_off_time TIME,
+
+    -- Risk management
+    max_loss DECIMAL(10,2),
+    max_profit DECIMAL(10,2),
+    trailing_sl DECIMAL(10,2),
+    risk_monitoring_enabled BOOLEAN DEFAULT TRUE,
+    risk_check_interval INTEGER DEFAULT 1,
+    auto_exit_on_max_loss BOOLEAN DEFAULT TRUE,
+    auto_exit_on_max_profit BOOLEAN DEFAULT TRUE,
+    trailing_sl_type VARCHAR(20) DEFAULT 'percentage',
+
+    -- Supertrend-based exit
+    supertrend_exit_enabled BOOLEAN DEFAULT FALSE,
+    supertrend_exit_type VARCHAR(20),  -- 'breakout' or 'breakdown'
+    supertrend_period INTEGER DEFAULT 7,
+    supertrend_multiplier DECIMAL(5,2) DEFAULT 3.0,
+    supertrend_timeframe VARCHAR(10) DEFAULT '5m',
+    supertrend_exit_triggered BOOLEAN DEFAULT FALSE,
+
+    -- Order settings
+    product_order_type VARCHAR(10) DEFAULT 'MIS',
+    selected_accounts JSON,
+    allocation_type VARCHAR(50),
+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id),
+    INDEX idx_is_active (is_active)
 );
 ```
 
@@ -303,60 +339,304 @@ CREATE TABLE strategies (
 ```python
 class Strategy(db.Model):
     __tablename__ = 'strategies'
-    
+
     id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     name = db.Column(db.String(100), nullable=False)
     description = db.Column(db.Text)
-    strategy_type = db.Column(db.String(50))
-    is_active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+    market_condition = db.Column(db.String(50))
+    risk_profile = db.Column(db.String(50))
+
+    # Timing settings
+    entry_time = db.Column(db.Time)
+    exit_time = db.Column(db.Time)
+    square_off_time = db.Column(db.Time)
+
+    # Risk management
+    max_loss = db.Column(db.Float)
+    max_profit = db.Column(db.Float)
+    trailing_sl = db.Column(db.Float)
+    risk_monitoring_enabled = db.Column(db.Boolean, default=True)
+    auto_exit_on_max_loss = db.Column(db.Boolean, default=True)
+    auto_exit_on_max_profit = db.Column(db.Boolean, default=True)
+
+    # Supertrend-based exit
+    supertrend_exit_enabled = db.Column(db.Boolean, default=False)
+    supertrend_exit_type = db.Column(db.String(20))
+    supertrend_period = db.Column(db.Integer, default=7)
+    supertrend_multiplier = db.Column(db.Float, default=3.0)
+    supertrend_timeframe = db.Column(db.String(10), default='5m')
+
     # Relationships
-    deployments = db.relationship('StrategyDeployment', backref='strategy', lazy='dynamic')
+    legs = db.relationship('StrategyLeg', backref='strategy', lazy='dynamic', cascade='all, delete-orphan')
+    executions = db.relationship('StrategyExecution', backref='strategy', lazy='dynamic', cascade='all, delete-orphan')
+    risk_events = db.relationship('RiskEvent', backref='strategy')
+
+    @property
+    def total_pnl(self):
+        """Calculate total P&L from all executions"""
+        return sum(e.realized_pnl or 0 for e in self.executions if e.status != 'error')
 ```
 
-### 8. Strategy Deployments Table
+### 8. Strategy Legs Table
 
 ```sql
-CREATE TABLE strategy_deployments (
+CREATE TABLE strategy_legs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategy_id INTEGER NOT NULL,
+    leg_number INTEGER NOT NULL,
+
+    -- Instrument details
+    instrument VARCHAR(50),  -- 'NIFTY', 'BANKNIFTY', 'SENSEX'
+    product_type VARCHAR(20),  -- 'options', 'futures', 'equity'
+    expiry VARCHAR(50),  -- 'current_week', 'next_week', 'current_month'
+    action VARCHAR(10),  -- 'BUY', 'SELL'
+
+    -- Option specifics
+    option_type VARCHAR(10),  -- 'CE', 'PE'
+    strike_selection VARCHAR(50),  -- 'ATM', 'OTM', 'ITM', 'strike_price', 'premium_near'
+    strike_offset INTEGER DEFAULT 0,
+    strike_price DECIMAL(10,2),
+    premium_value DECIMAL(10,2),
+
+    -- Order details
+    order_type VARCHAR(20),  -- 'MARKET', 'LIMIT', 'SL-MKT', 'SL-LMT'
+    limit_price DECIMAL(10,2),
+    trigger_price DECIMAL(10,2),
+    price_condition VARCHAR(10),  -- 'ABOVE' or 'BELOW'
+    quantity INTEGER,
+    lots INTEGER DEFAULT 1,
+
+    -- Exit conditions
+    stop_loss_type VARCHAR(20),
+    stop_loss_value DECIMAL(10,2),
+    take_profit_type VARCHAR(20),
+    take_profit_value DECIMAL(10,2),
+    enable_trailing BOOLEAN DEFAULT FALSE,
+    trailing_type VARCHAR(20),
+    trailing_value DECIMAL(10,2),
+
+    is_executed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE,
+    INDEX idx_strategy_id (strategy_id)
+);
+```
+
+### 9. Strategy Executions Table
+
+```sql
+CREATE TABLE strategy_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     strategy_id INTEGER NOT NULL,
     account_id INTEGER NOT NULL,
-    capital_allocated DECIMAL(10,2),
-    max_positions INTEGER DEFAULT 5,
-    status VARCHAR(20) DEFAULT 'inactive',  -- active/inactive/paused
-    started_at TIMESTAMP,
-    stopped_at TIMESTAMP,
-    total_pnl DECIMAL(10,2) DEFAULT 0,
-    
+    leg_id INTEGER NOT NULL,
+
+    -- Order details
+    order_id VARCHAR(100),
+    exit_order_id VARCHAR(100),
+    symbol VARCHAR(100),
+    exchange VARCHAR(20),
+    entry_price DECIMAL(10,2),
+    exit_price DECIMAL(10,2),
+    quantity INTEGER,
+
+    -- Status tracking
+    status VARCHAR(50),  -- 'pending', 'entered', 'exited', 'stopped', 'error'
+    broker_order_status VARCHAR(50),
+    entry_time TIMESTAMP,
+    exit_time TIMESTAMP,
+
+    -- P&L tracking
+    realized_pnl DECIMAL(10,2),
+    unrealized_pnl DECIMAL(10,2),
+    brokerage DECIMAL(10,2),
+    exit_reason VARCHAR(100),
+    error_message TEXT,
+
+    -- Real-time monitoring
+    last_price DECIMAL(10,2),
+    last_price_updated TIMESTAMP,
+    websocket_subscribed BOOLEAN DEFAULT FALSE,
+    trailing_sl_triggered DECIMAL(10,2),
+
+    -- Risk event capture
+    sl_hit_at TIMESTAMP,
+    sl_hit_price DECIMAL(10,2),
+    tp_hit_at TIMESTAMP,
+    tp_hit_price DECIMAL(10,2),
+
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
     FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE,
     FOREIGN KEY (account_id) REFERENCES trading_accounts(id) ON DELETE CASCADE,
+    FOREIGN KEY (leg_id) REFERENCES strategy_legs(id) ON DELETE CASCADE,
     INDEX idx_strategy_id (strategy_id),
     INDEX idx_account_id (account_id),
     INDEX idx_status (status)
 );
 ```
 
-**Model Definition:**
-```python
-class StrategyDeployment(db.Model):
-    __tablename__ = 'strategy_deployments'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    strategy_id = db.Column(db.Integer, db.ForeignKey('strategies.id'), nullable=False)
-    account_id = db.Column(db.Integer, db.ForeignKey('trading_accounts.id'), nullable=False)
-    capital_allocated = db.Column(db.Float)
-    max_positions = db.Column(db.Integer, default=5)
-    status = db.Column(db.String(20), default='inactive')
-    started_at = db.Column(db.DateTime)
-    stopped_at = db.Column(db.DateTime)
-    total_pnl = db.Column(db.Float, default=0)
+## Margin & Risk Management Tables
+
+### 10. Margin Requirements Table
+
+```sql
+CREATE TABLE margin_requirements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    instrument VARCHAR(50) NOT NULL,  -- 'NIFTY', 'BANKNIFTY', 'SENSEX'
+
+    -- Margin values for different trade types (in INR per lot)
+    ce_pe_sell_expiry DECIMAL(12,2) DEFAULT 205000,
+    ce_pe_sell_non_expiry DECIMAL(12,2) DEFAULT 250000,
+    ce_and_pe_sell_expiry DECIMAL(12,2) DEFAULT 250000,
+    ce_and_pe_sell_non_expiry DECIMAL(12,2) DEFAULT 320000,
+    futures_expiry DECIMAL(12,2) DEFAULT 215000,
+    futures_non_expiry DECIMAL(12,2) DEFAULT 215000,
+
+    -- SENSEX specific margins
+    sensex_ce_pe_sell_expiry DECIMAL(12,2) DEFAULT 180000,
+    sensex_ce_pe_sell_non_expiry DECIMAL(12,2) DEFAULT 220000,
+    sensex_ce_and_pe_sell_expiry DECIMAL(12,2) DEFAULT 225000,
+    sensex_ce_and_pe_sell_non_expiry DECIMAL(12,2) DEFAULT 290000,
+    sensex_futures_expiry DECIMAL(12,2) DEFAULT 185000,
+    sensex_futures_non_expiry DECIMAL(12,2) DEFAULT 185000,
+
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (user_id, instrument)
+);
+```
+
+### 11. Trade Quality Grades Table
+
+```sql
+CREATE TABLE trade_qualities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    quality_grade VARCHAR(10) NOT NULL,  -- 'A', 'B', 'C'
+    margin_percentage DECIMAL(5,2) NOT NULL,  -- 95%, 65%, 36%
+    risk_level VARCHAR(20),  -- 'conservative', 'moderate', 'aggressive'
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (user_id, quality_grade)
+);
+```
+
+**Default Values:**
+- Grade A: 95% margin utilization (conservative)
+- Grade B: 65% margin utilization (moderate)
+- Grade C: 36% margin utilization (aggressive)
+
+### 12. Margin Tracker Table
+
+```sql
+CREATE TABLE margin_trackers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL,
+
+    -- Available margins
+    total_available_margin DECIMAL(12,2) DEFAULT 0,
+    used_margin DECIMAL(12,2) DEFAULT 0,
+    free_margin DECIMAL(12,2) DEFAULT 0,
+
+    -- F&O specific margins
+    span_margin DECIMAL(12,2) DEFAULT 0,
+    exposure_margin DECIMAL(12,2) DEFAULT 0,
+    option_premium DECIMAL(12,2) DEFAULT 0,
+
+    -- Trade-wise margin allocation
+    allocated_margins JSON,
+
+    -- Real-time tracking
+    last_updated TIMESTAMP,
+    update_count INTEGER DEFAULT 0,
+
+    FOREIGN KEY (account_id) REFERENCES trading_accounts(id) ON DELETE CASCADE
+);
+```
+
+### 13. Risk Events Table
+
+```sql
+CREATE TABLE risk_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategy_id INTEGER NOT NULL,
+    execution_id INTEGER,
+    event_type VARCHAR(50) NOT NULL,  -- 'max_loss', 'max_profit', 'trailing_sl', 'supertrend'
+    threshold_value DECIMAL(12,2),
+    current_value DECIMAL(12,2),
+    action_taken VARCHAR(50),  -- 'close_all', 'close_partial', 'alert_only'
+    exit_order_ids JSON,
+    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+
+    FOREIGN KEY (strategy_id) REFERENCES strategies(id) ON DELETE CASCADE,
+    FOREIGN KEY (execution_id) REFERENCES strategy_executions(id) ON DELETE SET NULL,
+    INDEX idx_strategy_id (strategy_id),
+    INDEX idx_event_type (event_type),
+    INDEX idx_triggered_at (triggered_at)
+);
+```
+
+### 14. Trading Settings Table
+
+```sql
+CREATE TABLE trading_settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    symbol VARCHAR(50) NOT NULL,  -- 'NIFTY', 'BANKNIFTY', 'SENSEX'
+    lot_size INTEGER NOT NULL DEFAULT 25,
+    freeze_quantity INTEGER NOT NULL DEFAULT 1800,
+    max_lots_per_order INTEGER DEFAULT 36,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    UNIQUE (user_id, symbol)
+);
+```
+
+**Default Values (as of May 2025):**
+- NIFTY: lot_size=75, freeze_quantity=1800, max_lots_per_order=24
+- BANKNIFTY: lot_size=35, freeze_quantity=900, max_lots_per_order=25
+- SENSEX: lot_size=20, freeze_quantity=1000, max_lots_per_order=50
+
+### 15. WebSocket Sessions Table
+
+```sql
+CREATE TABLE websocket_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    session_id VARCHAR(64) UNIQUE NOT NULL,
+    underlying VARCHAR(20) NOT NULL,  -- NIFTY, BANKNIFTY, SENSEX
+    expiry VARCHAR(20) NOT NULL,
+    subscribed_symbols JSON,
+    is_active BOOLEAN DEFAULT TRUE,
+    last_heartbeat TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_session_id (session_id),
+    INDEX idx_is_active (is_active)
+);
 ```
 
 ## Configuration Tables
 
-### 9. Trading Hours Template Table
+### 16. Trading Hours Template Table
 
 ```sql
 CREATE TABLE trading_hours_templates (

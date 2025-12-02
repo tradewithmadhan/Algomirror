@@ -30,6 +30,10 @@ AlgoMirror follows a modular, microservice-ready architecture with clear separat
 │  │  WebSocket   │ │ Option Chain │ │   OpenAlgo   │   │
 │  │   Manager    │ │   Manager    │ │    Client    │   │
 │  └──────────────┘ └──────────────┘ └──────────────┘   │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐   │
+│  │  Strategy    │ │   Margin     │ │  Supertrend  │   │
+│  │  Executor    │ │  Calculator  │ │    Service   │   │
+│  └──────────────┘ └──────────────┘ └──────────────┘   │
 └─────────────────────┬───────────────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────────────┐
@@ -131,9 +135,48 @@ ActivityLog
 ├── ip_address
 └── timestamp
 
+-- Strategy & Execution
+Strategy
+├── id (PK)
+├── user_id (FK → Users)
+├── name
+├── risk_profile ('fixed_lots', 'balanced', 'conservative', 'aggressive')
+├── supertrend_exit_enabled
+├── supertrend_period/multiplier/timeframe
+└── max_loss/max_profit/trailing_sl
+
+StrategyExecution
+├── id (PK)
+├── strategy_id (FK → Strategy)
+├── account_id (FK → TradingAccounts)
+├── leg_id (FK → StrategyLeg)
+├── order_id/exit_order_id
+├── status ('pending', 'entered', 'exited', 'error')
+└── realized_pnl/unrealized_pnl
+
+-- Margin & Risk Management
+MarginRequirement
+├── id (PK)
+├── user_id (FK → Users)
+├── instrument
+└── ce_pe_sell_expiry/non_expiry margins
+
+TradeQuality
+├── id (PK)
+├── user_id (FK → Users)
+├── quality_grade ('A', 'B', 'C')
+└── margin_percentage (95%, 65%, 36%)
+
+RiskEvent
+├── id (PK)
+├── strategy_id (FK → Strategy)
+├── event_type ('max_loss', 'max_profit', 'trailing_sl', 'supertrend')
+├── threshold_value/current_value
+└── action_taken
+
 -- Option Chain Data (In-Memory)
 OptionChainCache
-├── underlying (NIFTY/BANKNIFTY)
+├── underlying (NIFTY/BANKNIFTY/SENSEX)
 ├── strikes (JSON)
 ├── expiry
 ├── last_update
@@ -172,6 +215,43 @@ OptionChainCache
 ```
 
 ## Detailed Component Architecture
+
+### Strategy Execution Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                  Strategy Executor                        │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  ┌─────────────────────────────────────────────────────┐│
+│  │              Parallel Execution Engine              ││
+│  │  • ThreadPoolExecutor for concurrent order placement││
+│  │  • Max workers configurable per strategy            ││
+│  │  • Freeze quantity order splitting                  ││
+│  └─────────────────────────────────────────────────────┘│
+│                                                          │
+│  ┌─────────────────────────────────────────────────────┐│
+│  │              Margin Calculator                      ││
+│  │  • Dynamic lot sizing based on available margin     ││
+│  │  • Trade quality grades (A: 95%, B: 65%, C: 36%)   ││
+│  │  • Expiry vs non-expiry margin awareness           ││
+│  └─────────────────────────────────────────────────────┘│
+│                                                          │
+│  ┌─────────────────────────────────────────────────────┐│
+│  │              Risk Monitor                           ││
+│  │  • Max loss/profit threshold monitoring            ││
+│  │  • Trailing stop loss calculation                  ││
+│  │  • Position-level and strategy-level P&L tracking  ││
+│  └─────────────────────────────────────────────────────┘│
+│                                                          │
+│  ┌─────────────────────────────────────────────────────┐│
+│  │              Supertrend Exit Service                ││
+│  │  • Background thread monitoring price action       ││
+│  │  • Numba-optimized Supertrend calculation          ││
+│  │  • Automatic exit on breakout/breakdown signals    ││
+│  └─────────────────────────────────────────────────────┘│
+└──────────────────────────────────────────────────────────┘
+```
 
 ### 1. Flask Application Factory Pattern
 
@@ -456,7 +536,7 @@ Services:
 
 ```yaml
 Services:
-  - Gunicorn WSGI Server (4 workers)
+  - Gunicorn WSGI Server (gthread worker, 4 workers)
   - PostgreSQL Database (connection pooling)
   - Redis (caching) + Database sessions
   - Alternative: Filesystem sessions (single-user)
@@ -464,6 +544,39 @@ Services:
   - WebSocket Load Balancing
   - Structured JSON logging
   - Monitoring & Alerting
+
+Background Services:
+  - Supertrend Exit Monitor (daemon thread)
+  - Order Status Poller (daemon thread)
+  - Risk Monitor (strategy-level, per execution)
+```
+
+### Threading Architecture
+
+```
+┌──────────────────────────────────────────────────────────┐
+│                    Main Application                       │
+├──────────────────────────────────────────────────────────┤
+│                                                          │
+│  Main Thread (Flask/Gunicorn gthread worker)             │
+│  └── HTTP Request Handlers                               │
+│                                                          │
+│  Background Daemon Threads:                              │
+│  ├── WebSocket Manager Thread                            │
+│  │   └── Connection monitoring & reconnection            │
+│  ├── Supertrend Exit Service Thread                      │
+│  │   └── Price monitoring for indicator-based exits      │
+│  ├── Order Status Poller Thread                          │
+│  │   └── Periodic order status synchronization           │
+│  └── Risk Monitor Threads (per strategy)                 │
+│       └── P&L threshold monitoring                       │
+│                                                          │
+│  ThreadPoolExecutor (Strategy Execution):                │
+│  └── Parallel order placement across accounts            │
+│                                                          │
+│  Note: Uses native Python threading (not eventlet)       │
+│  Compatible with Python 3.13+ and TA-Lib                 │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ### 3. Docker Architecture
