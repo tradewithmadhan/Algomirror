@@ -28,7 +28,8 @@
       "Bash(.venvScriptspython.exe -m flask db migrate -m \"Add next_month_lot_size to TradingSettings\")",
       "Bash(.venvScriptsflask.exe db migrate -m \"Add next_month_lot_size to TradingSettings\")",
       "Bash(.venv/Scripts/flask.exe db migrate -m \"Add next_month_lot_size to TradingSettings\")",
-      "Bash(.venv/Scripts/flask.exe db init)"
+      "Bash(.venv/Scripts/flask.exe db init)",
+      "Bash(.venvScriptspython.exe migratemigrate_all.py)"
     ],
     "deny": [],
     "ask": []

@@ -23,7 +23,7 @@ def get_freeze_quantity(user_id: int, symbol: str) -> int:
     """
     # Extract base symbol from option/futures symbol
     base_symbol = symbol
-    for underlying in ['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'SENSEX']:
+    for underlying in ['BANKNIFTY', 'NIFTY', 'SENSEX']:  # BANKNIFTY first to avoid matching NIFTY prefix
         if symbol.startswith(underlying):
             base_symbol = underlying
             break
@@ -39,13 +39,11 @@ def get_freeze_quantity(user_id: int, symbol: str) -> int:
         logger.info(f"Freeze quantity for {base_symbol}: {setting.freeze_quantity}")
         return setting.freeze_quantity
 
-    # Default freeze quantities if not found
+    # Default freeze quantities if not found (as per NSE circular Dec 2025)
     defaults = {
         'NIFTY': 1800,
-        'BANKNIFTY': 900,
-        'SENSEX': 1000,
-        'FINNIFTY': 1800,
-        'MIDCPNIFTY': 1800
+        'BANKNIFTY': 600,
+        'SENSEX': 1000
     }
 
     freeze_qty = defaults.get(base_symbol, 1800)

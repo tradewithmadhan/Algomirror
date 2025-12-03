@@ -509,20 +509,36 @@ class SupertrendExitService:
                                 host=position.account.host_url
                             )
 
-                            # Place close order with freeze awareness
+                            # Place close order with freeze awareness and retry logic
                             from app.utils.freeze_quantity_handler import place_order_with_freeze_check
+                            import time as time_module
 
-                            response = place_order_with_freeze_check(
-                                client=client,
-                                user_id=user_id,
-                                strategy=strategy_name,
-                                symbol=position.symbol,
-                                exchange=position.exchange,
-                                action=close_action,
-                                quantity=position.quantity,
-                                price_type='MARKET',
-                                product=product_type or 'MIS'
-                            )
+                            max_retries = 3
+                            retry_delay = 1
+                            response = None
+
+                            for attempt in range(max_retries):
+                                try:
+                                    response = place_order_with_freeze_check(
+                                        client=client,
+                                        user_id=user_id,
+                                        strategy=strategy_name,
+                                        symbol=position.symbol,
+                                        exchange=position.exchange,
+                                        action=close_action,
+                                        quantity=position.quantity,
+                                        price_type='MARKET',
+                                        product=product_type or 'MIS'
+                                    )
+                                    if response and isinstance(response, dict):
+                                        break
+                                except Exception as api_error:
+                                    logger.warning(f"[RETRY] Supertrend exit attempt {attempt + 1}/{max_retries} failed: {api_error}")
+                                    if attempt < max_retries - 1:
+                                        time_module.sleep(retry_delay)
+                                        retry_delay *= 2
+                                    else:
+                                        response = {'status': 'error', 'message': f'API error after {max_retries} retries'}
 
                             if response and response.get('status') == 'success':
                                 # Update position

@@ -443,6 +443,7 @@ class StrategyExecution(db.Model):
     exit_order_id = db.Column(db.String(100))  # Exit order ID from OpenAlgo
     symbol = db.Column(db.String(100))  # Actual traded symbol
     exchange = db.Column(db.String(20))
+    product = db.Column(db.String(10))  # Order product type: MIS, NRML, CNC
     entry_price = db.Column(db.Float)
     exit_price = db.Column(db.Float)
     quantity = db.Column(db.Integer)

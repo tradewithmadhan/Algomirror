@@ -433,6 +433,7 @@ class StrategyExecutor:
                         symbol=symbol,
                         exchange=exchange,
                         quantity=quantity,
+                        product=self.strategy.product_order_type or 'MIS',  # MIS, NRML, CNC
                         status='pending',  # Will be updated by background poller
                         broker_order_status='open',  # Assume open until poller updates
                         entry_time=datetime.utcnow(),

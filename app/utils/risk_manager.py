@@ -399,24 +399,44 @@ class RiskManager:
                 host=primary_account.host_url
             )
 
-            # Close each position
+            # Close each position with freeze-aware placement and retry logic
+            from app.utils.freeze_quantity_handler import place_order_with_freeze_check
+
             for execution in open_executions:
                 try:
                     # Reverse transaction type for exit
                     exit_transaction = 'SELL' if execution.transaction_type.upper() == 'BUY' else 'BUY'
 
-                    # Place exit order using keyword arguments
-                    response = client.placeorder(
-                        strategy=strategy.name,
-                        symbol=execution.symbol,
-                        action=exit_transaction,
-                        exchange=execution.exchange,
-                        price_type='MARKET',  # Market order for immediate exit
-                        product=execution.product,
-                        quantity=str(execution.quantity)
-                    )
+                    # Place exit order with freeze-aware placement and retry logic
+                    max_retries = 3
+                    retry_delay = 1
+                    response = None
 
-                    if response.get('status') == 'success':
+                    for attempt in range(max_retries):
+                        try:
+                            response = place_order_with_freeze_check(
+                                client=client,
+                                user_id=strategy.user_id,
+                                strategy=strategy.name,
+                                symbol=execution.symbol,
+                                exchange=execution.exchange,
+                                action=exit_transaction,
+                                quantity=execution.quantity,
+                                price_type='MARKET',
+                                product=execution.product or 'MIS'
+                            )
+                            if response and isinstance(response, dict):
+                                break
+                        except Exception as api_error:
+                            logger.warning(f"[RETRY] Risk exit attempt {attempt + 1}/{max_retries} failed: {api_error}")
+                            if attempt < max_retries - 1:
+                                import time
+                                time.sleep(retry_delay)
+                                retry_delay *= 2
+                            else:
+                                response = {'status': 'error', 'message': f'API error after {max_retries} retries'}
+
+                    if response and response.get('status') == 'success':
                         order_id = response.get('orderid')
                         exit_order_ids.append(order_id)
 
@@ -432,7 +452,7 @@ class RiskManager:
                     else:
                         logger.error(
                             f"Failed to place exit order for {execution.symbol}: "
-                            f"{response.get('message')}"
+                            f"{response.get('message') if response else 'No response'}"
                         )
 
                 except Exception as e:
