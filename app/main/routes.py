@@ -253,9 +253,19 @@ def account_positions():
 @main_bp.route('/account/<int:account_id>/close-all-positions', methods=['POST'])
 @login_required
 def close_account_positions(account_id):
-    """Close all open positions for a specific account"""
+    """Close all open positions for a specific account - PARALLEL EXECUTION
+
+    Uses the same robust logic as strategy close-all:
+    - Parallel execution with staggered delays
+    - Freeze quantity handling
+    - Retry logic for failed API calls
+    - Proper P&L calculation from exit prices
+    """
+    import threading
     from app.models import Strategy, StrategyExecution, StrategyLeg
     from app.utils.openalgo_client import ExtendedOpenAlgoAPI
+    from app.utils.freeze_quantity_handler import place_order_with_freeze_check
+    from app import create_app
 
     # Verify account ownership
     account = TradingAccount.query.filter_by(
@@ -275,77 +285,180 @@ def close_account_positions(account_id):
         status='entered'
     ).all()
 
+    # Filter out rejected/cancelled orders
+    open_executions = [
+        pos for pos in open_executions
+        if not (hasattr(pos, 'broker_order_status') and pos.broker_order_status in ['rejected', 'cancelled'])
+    ]
+
     if not open_executions:
         return jsonify({
             'status': 'info',
             'message': 'No open positions to close'
         })
 
-    # Initialize OpenAlgo client
-    try:
-        client = ExtendedOpenAlgoAPI(
-            api_key=account.get_api_key(),
-            host=account.host_url
+    current_app.logger.info(f"[ACCOUNT CLOSE ALL] Closing {len(open_executions)} positions for account {account_id}")
+
+    # Thread-safe results collection
+    results = []
+    results_lock = threading.Lock()
+    user_id = current_user.id
+
+    def close_position_worker(execution, thread_index):
+        """Worker function to close a single position in parallel"""
+        import time as time_module
+
+        # Add staggered delay based on thread index to prevent race conditions
+        delay = thread_index * 0.3
+        if delay > 0:
+            time_module.sleep(delay)
+
+        # Create Flask app context for this thread
+        app = create_app()
+
+        with app.app_context():
+            try:
+                # Get fresh execution from database
+                exec_to_close = StrategyExecution.query.get(execution.id)
+                if not exec_to_close:
+                    with results_lock:
+                        results.append({
+                            'symbol': execution.symbol,
+                            'status': 'error',
+                            'error': 'Position not found'
+                        })
+                    return
+
+                leg = StrategyLeg.query.get(exec_to_close.leg_id)
+                if not leg:
+                    with results_lock:
+                        results.append({
+                            'symbol': execution.symbol,
+                            'status': 'error',
+                            'error': 'Leg not found'
+                        })
+                    return
+
+                # Get strategy for product type
+                strategy = Strategy.query.get(exec_to_close.strategy_id)
+                product_type = strategy.product_order_type if strategy else (exec_to_close.product or 'MIS')
+
+                # Initialize client
+                acct = TradingAccount.query.get(exec_to_close.account_id)
+                client = ExtendedOpenAlgoAPI(
+                    api_key=acct.get_api_key(),
+                    host=acct.host_url
+                )
+
+                # Determine exit action (opposite of entry)
+                exit_action = 'SELL' if leg.action == 'BUY' else 'BUY'
+
+                current_app.logger.info(f"[THREAD {thread_index}] Closing: {exit_action} {exec_to_close.quantity} {exec_to_close.symbol}")
+
+                # Place close order with freeze-aware placement and retry logic
+                max_retries = 3
+                retry_delay = 1
+                response = None
+
+                for attempt in range(max_retries):
+                    try:
+                        response = place_order_with_freeze_check(
+                            client=client,
+                            user_id=user_id,
+                            strategy=strategy.name if strategy else 'AccountClose',
+                            symbol=exec_to_close.symbol,
+                            exchange=exec_to_close.exchange,
+                            action=exit_action,
+                            quantity=exec_to_close.quantity,
+                            price_type='MARKET',
+                            product=product_type
+                        )
+                        if response and isinstance(response, dict):
+                            break
+                    except Exception as api_error:
+                        current_app.logger.warning(f"[RETRY] Attempt {attempt + 1}/{max_retries} failed: {api_error}")
+                        if attempt < max_retries - 1:
+                            time_module.sleep(retry_delay)
+                            retry_delay *= 2
+                        else:
+                            response = {'status': 'error', 'message': f'API error after {max_retries} retries'}
+
+                if response and response.get('status') == 'success':
+                    # Update execution record
+                    exec_to_close.status = 'exited'
+                    exec_to_close.exit_order_id = response.get('orderid')
+                    exec_to_close.exit_time = datetime.utcnow()
+                    exec_to_close.exit_reason = 'account_close_all'
+                    exec_to_close.broker_order_status = 'complete'
+
+                    # Fetch exit price
+                    try:
+                        quote = client.quotes(symbol=exec_to_close.symbol, exchange=exec_to_close.exchange)
+                        exec_to_close.exit_price = float(quote.get('data', {}).get('ltp', 0))
+                    except Exception:
+                        exec_to_close.exit_price = exec_to_close.entry_price
+
+                    # Calculate realized P&L
+                    if leg.action == 'BUY':
+                        exec_to_close.realized_pnl = (exec_to_close.exit_price - exec_to_close.entry_price) * exec_to_close.quantity
+                    else:
+                        exec_to_close.realized_pnl = (exec_to_close.entry_price - exec_to_close.exit_price) * exec_to_close.quantity
+
+                    db.session.commit()
+
+                    current_app.logger.info(f"[THREAD {thread_index}] SUCCESS: {exec_to_close.symbol}, P&L: {exec_to_close.realized_pnl:.2f}")
+
+                    with results_lock:
+                        results.append({
+                            'symbol': exec_to_close.symbol,
+                            'status': 'success',
+                            'pnl': exec_to_close.realized_pnl
+                        })
+                else:
+                    error_msg = response.get('message', 'Unknown error') if response else 'No response'
+                    current_app.logger.error(f"[THREAD {thread_index}] FAILED: {exec_to_close.symbol}: {error_msg}")
+
+                    with results_lock:
+                        results.append({
+                            'symbol': exec_to_close.symbol,
+                            'status': 'failed',
+                            'error': error_msg
+                        })
+
+            except Exception as e:
+                current_app.logger.error(f"[THREAD {thread_index}] ERROR: {execution.symbol}: {str(e)}", exc_info=True)
+                with results_lock:
+                    results.append({
+                        'symbol': execution.symbol,
+                        'status': 'error',
+                        'error': str(e)
+                    })
+
+    # Create and start threads for parallel execution
+    threads = []
+    for idx, execution in enumerate(open_executions):
+        thread = threading.Thread(
+            target=close_position_worker,
+            args=(execution, idx),
+            name=f"AccountClose_{execution.symbol}"
         )
-    except Exception as e:
-        return jsonify({
-            'status': 'error',
-            'message': f'Failed to connect to account: {str(e)}'
-        }), 500
+        threads.append(thread)
+        thread.start()
 
-    # Close all positions
-    closed_count = 0
-    failed_count = 0
-    total_pnl = 0
-    errors = []
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join(timeout=30)
 
-    for execution in open_executions:
-        try:
-            leg = StrategyLeg.query.get(execution.leg_id)
-            if not leg:
-                continue
+    # Calculate results
+    successful = [r for r in results if r.get('status') == 'success']
+    failed = [r for r in results if r.get('status') in ['failed', 'error']]
+    total_pnl = sum(r.get('pnl', 0) for r in successful)
+    closed_count = len(successful)
+    failed_count = len(failed)
 
-            # Determine exit action (opposite of entry)
-            exit_action = 'SELL' if leg.action == 'BUY' else 'BUY'
-
-            # Place exit order
-            order_response = client.placesmartorder(
-                symbol=execution.symbol,
-                action=exit_action,
-                exchange=execution.exchange,
-                price_type='MARKET',
-                product='MIS',
-                quantity=str(execution.quantity),
-                position_size='0'
-            )
-
-            if order_response.get('status') == 'success':
-                # Update execution record
-                execution.status = 'exited'
-                execution.exit_order_id = order_response.get('orderid')
-                execution.exit_time = datetime.utcnow()
-                execution.exit_reason = 'account_close_all'
-
-                # Calculate P&L if available
-                if execution.unrealized_pnl:
-                    execution.realized_pnl = execution.unrealized_pnl
-                    total_pnl += execution.unrealized_pnl
-
-                closed_count += 1
-            else:
-                failed_count += 1
-                errors.append(f"{execution.symbol}: {order_response.get('message', 'Unknown error')}")
-
-        except Exception as e:
-            failed_count += 1
-            errors.append(f"{execution.symbol}: {str(e)}")
-            current_app.logger.error(f'Error closing position {execution.id}: {str(e)}')
-
-    # Commit all changes
-    db.session.commit()
+    current_app.logger.info(f"[ACCOUNT CLOSE ALL] Completed: {closed_count}/{len(open_executions)} closed, P&L: {total_pnl:.2f}")
 
     # Log activity
-    ActivityLog.query.filter_by().delete()  # Cleanup
     log = ActivityLog(
         user_id=current_user.id,
         account_id=account_id,
@@ -360,7 +473,9 @@ def close_account_positions(account_id):
     db.session.add(log)
     db.session.commit()
 
-    # Build response message
+    # Build response
+    errors = [r.get('error') for r in failed if r.get('error')]
+
     if closed_count > 0 and failed_count == 0:
         return jsonify({
             'status': 'success',
@@ -374,7 +489,7 @@ def close_account_positions(account_id):
             'message': f'Closed {closed_count} position(s), but {failed_count} failed',
             'total_pnl': total_pnl,
             'closed_count': closed_count,
-            'errors': errors[:5]  # Return first 5 errors
+            'errors': errors[:5]
         })
     else:
         return jsonify({
