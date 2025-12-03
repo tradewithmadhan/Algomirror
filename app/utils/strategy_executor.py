@@ -1793,7 +1793,6 @@ class StrategyExecutor:
                 execution.status = 'exited'
                 execution.exit_time = datetime.utcnow()
                 execution.exit_reason = reason
-                execution.realized_pnl = execution.unrealized_pnl
 
                 # Fetch exit order details to get executed price
                 order_status_response = client.orderstatus(
@@ -1801,6 +1800,7 @@ class StrategyExecutor:
                     strategy=self.strategy.name
                 )
 
+                exit_avg_price = None
                 if order_status_response.get('status') == 'success':
                     order_data = order_status_response.get('data', {})
                     exit_avg_price = order_data.get('average_price')
@@ -1823,11 +1823,18 @@ class StrategyExecutor:
                                 exit_avg_price = retry_exit_price
                                 logger.info(f"[EXIT] Exit price after retry: Rs.{exit_avg_price} for {execution.symbol}")
 
-                    # Only update if we have a valid price
-                    if exit_avg_price and exit_avg_price > 0:
-                        execution.exit_price = exit_avg_price
+                # Calculate realized P&L using actual prices
+                if exit_avg_price and exit_avg_price > 0:
+                    execution.exit_price = exit_avg_price
+                    # Calculate realized P&L based on action (BUY/SELL)
+                    if execution.leg.action == 'BUY':
+                        execution.realized_pnl = (exit_avg_price - execution.entry_price) * execution.quantity
                     else:
-                        logger.warning(f"[EXIT] Could not fetch valid exit price for {execution.symbol}")
+                        execution.realized_pnl = (execution.entry_price - exit_avg_price) * execution.quantity
+                else:
+                    # Fallback: use unrealized_pnl if exit price unavailable
+                    logger.warning(f"[EXIT] Could not fetch valid exit price for {execution.symbol}, using unrealized_pnl as fallback")
+                    execution.realized_pnl = execution.unrealized_pnl if execution.unrealized_pnl else 0
 
                 db.session.commit()
 
