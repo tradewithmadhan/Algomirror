@@ -200,12 +200,15 @@ def get_chart_data(strategy_id):
             })
 
         # Get current signal
+        # Direction convention (matching Pine Script/TradingView):
+        #   direction = -1: Bullish (Up direction) - premium ABOVE supertrend -> BUY
+        #   direction = 1: Bearish (Down direction) - premium BELOW supertrend -> SELL
         current_direction = direction[-1] if len(direction) > 0 else 0
         if np.isnan(current_direction):
             signal = 'NEUTRAL'
-        elif current_direction > 0:
+        elif current_direction < 0:  # direction = -1 (bullish)
             signal = 'BUY'
-        else:
+        else:  # direction = 1 (bearish)
             signal = 'SELL'
 
         logger.info(f"Returning {len(chart_data)} bars of REAL OHLC data to frontend with Supertrend signal: {signal} (active legs: {len(legs)}/{len(all_legs)})")
