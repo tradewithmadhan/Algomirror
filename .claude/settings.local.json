@@ -32,7 +32,8 @@
       "Bash(.venvScriptspython.exe migratemigrate_all.py)",
       "mcp__ide__getDiagnostics",
       "Bash(.venvScriptspython.exe -m py_compile apputilssupertrend_exit_service.py)",
-      "Bash(D:openalgo-multialgomirror.venvScriptspython.exe -m py_compile:*)"
+      "Bash(D:openalgo-multialgomirror.venvScriptspython.exe -m py_compile:*)",
+      "Bash(.venv\\Scripts\\python.exe -c:*)"
     ],
     "deny": [],
     "ask": []

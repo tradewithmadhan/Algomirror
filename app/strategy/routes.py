@@ -1864,8 +1864,9 @@ def close_leg_all_accounts(strategy_id):
                         host=position.account.host_url
                     )
 
-                    # Get the actual product from the position's leg
-                    position_product = position.leg.product_type.upper() if position.leg.product_type else 'MIS'
+                    # Use strategy's product_order_type (MIS/NRML), not leg's product_type (options/futures)
+                    # This matches the close_all_positions behavior
+                    position_product = product_type or 'MIS'
 
                     # Try to verify position at broker level (optional - don't block close if verification fails)
                     try:
