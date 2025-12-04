@@ -278,8 +278,8 @@
                                 </label>
                                 <select id="supertrendTimeframe" class="select select-bordered select-sm" disabled>
                                     <option value="3m" {% if strategy and strategy.supertrend_timeframe == '3m' %}selected{% endif %}>3m</option>
-                                    <option value="5m" {% if strategy and strategy.supertrend_timeframe == '5m' %}selected{% elif not strategy %}selected{% endif %}>5m</option>
-                                    <option value="10m" {% if strategy and strategy.supertrend_timeframe == '10m' %}selected{% endif %}>10m</option>
+                                    <option value="5m" {% if strategy and strategy.supertrend_timeframe == '5m' %}selected{% endif %}>5m</option>
+                                    <option value="10m" {% if strategy and strategy.supertrend_timeframe == '10m' %}selected{% elif not strategy %}selected{% endif %}>10m</option>
                                     <option value="15m" {% if strategy and strategy.supertrend_timeframe == '15m' %}selected{% endif %}>15m</option>
                                 </select>
                             </div>
@@ -288,8 +288,8 @@
                                     <span class="label-text text-xs">Period</span>
                                 </label>
                                 <input type="number" id="supertrendPeriod" class="input input-bordered input-sm"
-                                       placeholder="7" min="5" max="20" disabled
-                                       value="{{ strategy.supertrend_period if strategy and strategy.supertrend_period else '7' }}">
+                                       placeholder="10" min="5" max="20" disabled
+                                       value="{{ strategy.supertrend_period if strategy and strategy.supertrend_period else '10' }}">
                             </div>
                             <div class="form-control">
                                 <label class="label py-1">
@@ -1705,7 +1705,7 @@ function saveStrategy(execute = false) {
         // Supertrend exit settings (only if selected)
         supertrend_exit_enabled: useSupertrendExit,
         supertrend_exit_type: useSupertrendExit ? document.getElementById('supertrendExitType').value : null,
-        supertrend_period: useSupertrendExit ? parseInt(document.getElementById('supertrendPeriod').value) || 7 : null,
+        supertrend_period: useSupertrendExit ? parseInt(document.getElementById('supertrendPeriod').value) || 10 : null,
         supertrend_multiplier: useSupertrendExit ? parseFloat(document.getElementById('supertrendMultiplier').value) || 3.0 : null,
         supertrend_timeframe: useSupertrendExit ? document.getElementById('supertrendTimeframe').value : null,
         legs: legs
@@ -2376,9 +2376,9 @@ async function fetchCombinedPremium() {
 
     try {
         // Fetch chart data with strategy's supertrend parameters
-        const period = {{ strategy.supertrend_period if strategy and strategy.supertrend_period else 7 }};
+        const period = {{ strategy.supertrend_period if strategy and strategy.supertrend_period else 10 }};
         const multiplier = {{ strategy.supertrend_multiplier if strategy and strategy.supertrend_multiplier else 3.0 }};
-        const interval = '{{ strategy.supertrend_timeframe if strategy and strategy.supertrend_timeframe else "5m" }}';
+        const interval = '{{ strategy.supertrend_timeframe if strategy and strategy.supertrend_timeframe else "10m" }}';
 
         const response = await fetch(
             `/tradingview/api/chart-data/${strategyIdForRisk}?period=${period}&multiplier=${multiplier}&interval=${interval}&days=1&_=${Date.now()}`

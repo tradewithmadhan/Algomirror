@@ -86,9 +86,9 @@ def get_chart_data(strategy_id):
     Get chart data with Supertrend for a strategy
 
     Query Parameters:
-        - interval: Timeframe (1m, 5m, 15m - default: from strategy settings or 5m)
+        - interval: Timeframe (1m, 5m, 15m - default: from strategy settings or 10m)
         - days: Number of days to load (1-5, default: 3)
-        - period: Supertrend ATR period (default: from strategy settings or 7)
+        - period: Supertrend ATR period (default: from strategy settings or 10)
         - multiplier: Supertrend multiplier (default: from strategy settings or 3)
     """
     try:
@@ -98,9 +98,9 @@ def get_chart_data(strategy_id):
         ).first_or_404()
 
         # Get parameters - use strategy's Supertrend settings as defaults
-        interval = request.args.get('interval', strategy.supertrend_timeframe or '5m')
+        interval = request.args.get('interval', strategy.supertrend_timeframe or '10m')
         days = int(request.args.get('days', 3))
-        period = int(request.args.get('period', strategy.supertrend_period or 7))
+        period = int(request.args.get('period', strategy.supertrend_period or 10))
         multiplier = float(request.args.get('multiplier', strategy.supertrend_multiplier or 3.0))
 
         # Validate parameters
