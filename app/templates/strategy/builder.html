@@ -1470,6 +1470,38 @@ function stopStatusPolling() {
     }
 }
 
+// Continuous positions refresh for Risk Status updates (independent of order polling)
+let positionsRefreshInterval = null;
+
+function startPositionsRefresh() {
+    // Clear any existing interval
+    if (positionsRefreshInterval) {
+        clearInterval(positionsRefreshInterval);
+    }
+
+    {% if strategy %}
+    const strategyId = {{ strategy.id }};
+
+    // Refresh positions every 5 seconds for continuous Risk Status updates
+    positionsRefreshInterval = setInterval(() => {
+        loadPositions(strategyId);
+    }, 5000);
+
+    // Also do an immediate refresh
+    loadPositions(strategyId);
+
+    console.log('Positions refresh started (every 5 seconds)');
+    {% endif %}
+}
+
+function stopPositionsRefresh() {
+    if (positionsRefreshInterval) {
+        clearInterval(positionsRefreshInterval);
+        positionsRefreshInterval = null;
+        console.log('Positions refresh stopped');
+    }
+}
+
 // Check orderbook and freeze legs with pending orders
 async function checkAndFreezePendingLegs() {
     {% if strategy %}
@@ -1819,7 +1851,8 @@ function saveStrategy(execute = false) {
                         setTimeout(() => {
                             loadStrategyData(); // Reload orderbook/tradebook/positions
                             checkAndFreezePendingLegs(); // Check and freeze pending legs
-                            startStatusPolling(); // Start 5-second polling
+                            startStatusPolling(); // Start 5-second polling for order status
+                            startPositionsRefresh(); // Start continuous positions refresh for Risk Status
                             freezeAccountsIfExecuted(); // Freeze account selection after execution
                         }, 1000);
 
@@ -2338,26 +2371,8 @@ function updateRiskStatusDisplay(data) {
         maxProfitPct.textContent = `${pct}%`;
     }
 
-    // Update trailing SL status
-    const trailingSLStatus = document.getElementById('riskTrailingSLStatus');
-    const trailingSLTrigger = document.getElementById('riskTrailingSLTrigger');
-
-    if (trailingSLStatus) {
-        // Check if any execution has trailing SL triggered
-        const triggered = strategyData.executions.some(e => e.trailing_sl_triggered);
-        if (triggered) {
-            trailingSLStatus.textContent = 'Active';
-            trailingSLStatus.className = 'badge badge-success badge-sm ml-1';
-        } else {
-            trailingSLStatus.textContent = 'Inactive';
-            trailingSLStatus.className = 'badge badge-warning badge-sm ml-1';
-        }
-    }
-
-    if (trailingSLTrigger) {
-        const triggeredExec = strategyData.executions.find(e => e.trailing_sl_triggered);
-        trailingSLTrigger.textContent = triggeredExec ? `₹${triggeredExec.trailing_sl_triggered}` : '--';
-    }
+    // NOTE: TSL status is now updated by updateTrailingSLDisplay() called from refreshPositions()
+    // The SSE stream doesn't have full TSL state, so we skip updating TSL here to prevent flickering
 
     // Update leg-level SL/TP tracking table
     const legRiskTracking = document.getElementById('legRiskTracking');
@@ -2407,10 +2422,11 @@ function updateRiskStatusDisplay(data) {
     }
 }
 
-// Start risk status stream when page loads
+// Start risk status stream and positions refresh when page loads
 if (strategyIdForRisk && document.getElementById('riskStatusSection')) {
     document.addEventListener('DOMContentLoaded', function() {
         startRiskStatusStream();
+        startPositionsRefresh(); // Start continuous positions refresh for TSL updates
     });
 
     // Cleanup on page unload
@@ -2420,6 +2436,9 @@ if (strategyIdForRisk && document.getElementById('riskStatusSection')) {
         }
         if (combinedPremiumInterval) {
             clearInterval(combinedPremiumInterval);
+        }
+        if (positionsRefreshInterval) {
+            clearInterval(positionsRefreshInterval);
         }
     });
 }
@@ -2756,9 +2775,110 @@ async function loadPositions(strategyId) {
                     countElement.textContent = openPositionsCount;
                 }
             }
+
+            // Update Total P&L display
+            if (data.total_pnl !== undefined) {
+                const pnlElement = document.getElementById('total-pnl-value');
+                if (pnlElement) {
+                    const pnl = parseFloat(data.total_pnl) || 0;
+                    pnlElement.textContent = `₹${pnl.toFixed(2)}`;
+                    pnlElement.className = pnl >= 0 ? 'font-bold text-2xl text-success' : 'font-bold text-2xl text-error';
+                }
+
+                // Update Risk Status Current P&L
+                const riskPnlElement = document.getElementById('riskCurrentPnl');
+                if (riskPnlElement) {
+                    const pnl = parseFloat(data.total_pnl) || 0;
+                    riskPnlElement.textContent = `₹${pnl.toFixed(2)}`;
+                    riskPnlElement.className = pnl >= 0 ? 'font-bold text-lg ml-1 text-success' : 'font-bold text-lg ml-1 text-error';
+                }
+
+                // Update Risk Connection Status
+                const riskStatusEl = document.getElementById('riskConnectionStatus');
+                if (riskStatusEl) {
+                    riskStatusEl.innerHTML = '<span class="relative flex h-2 w-2"><span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span><span class="relative inline-flex rounded-full h-2 w-2 bg-success"></span></span>';
+                    riskStatusEl.className = 'badge badge-sm badge-success';
+                }
+            }
+
+            // Update Trailing SL status
+            if (data.tsl_status) {
+                updateTrailingSLDisplay(data.tsl_status);
+            }
+
+            // Update last update time
+            const lastUpdateEl = document.getElementById('riskLastUpdate');
+            if (lastUpdateEl) {
+                const now = new Date();
+                lastUpdateEl.textContent = now.toLocaleTimeString();
+            }
         }
     } catch (error) {
         console.error('Error loading positions:', error);
+    }
+}
+
+// Update Trailing SL display in Risk Status section
+function updateTrailingSLDisplay(tslStatus) {
+    const statusEl = document.getElementById('riskTrailingSLStatus');
+    const triggerEl = document.getElementById('riskTrailingSLTrigger');
+
+    console.log('TSL Status update:', tslStatus);
+
+    if (!statusEl) {
+        console.log('TSL status element not found');
+        return;
+    }
+
+    if (!tslStatus.enabled) {
+        statusEl.textContent = 'Disabled';
+        statusEl.className = 'badge badge-ghost badge-sm ml-1';
+        if (triggerEl) triggerEl.textContent = '--';
+        return;
+    }
+
+    // Check if there are no open positions
+    if (tslStatus.no_positions) {
+        statusEl.textContent = 'No Positions';
+        statusEl.className = 'badge badge-ghost badge-sm ml-1';
+        if (triggerEl) triggerEl.textContent = 'Open a position to activate';
+        return;
+    }
+
+    // Check if TSL should trigger exit
+    if (tslStatus.should_exit) {
+        statusEl.textContent = 'TRIGGERED!';
+        statusEl.className = 'badge badge-error badge-sm ml-1 animate-pulse';
+        if (triggerEl) {
+            triggerEl.innerHTML = `<span class="text-error">Exit signal! P&L dropped below ₹${tslStatus.trigger_pnl?.toFixed(2) || 0}</span>`;
+        }
+        return;
+    }
+
+    if (tslStatus.active) {
+        statusEl.textContent = 'Active';
+        statusEl.className = 'badge badge-success badge-sm ml-1';
+
+        // Show trigger level
+        if (triggerEl && tslStatus.trigger_pnl !== null) {
+            const peakDisplay = tslStatus.peak_pnl ? `Peak: ₹${tslStatus.peak_pnl.toFixed(2)}` : '';
+            const triggerDisplay = `Exit at: ₹${tslStatus.trigger_pnl.toFixed(2)}`;
+            triggerEl.innerHTML = `${peakDisplay}<br><span class="text-warning">${triggerDisplay}</span>`;
+        }
+    } else {
+        // TSL enabled but not active (no profit yet or in loss)
+        statusEl.textContent = 'Waiting';
+        statusEl.className = 'badge badge-warning badge-sm ml-1';
+
+        if (triggerEl) {
+            if (tslStatus.current_pnl < 0) {
+                triggerEl.textContent = `Current: ₹${tslStatus.current_pnl.toFixed(2)} (in loss)`;
+            } else if (tslStatus.current_pnl === 0) {
+                triggerEl.textContent = 'Activates when P&L > 0';
+            } else {
+                triggerEl.textContent = 'Tracking will start shortly';
+            }
+        }
     }
 }
 

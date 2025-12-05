@@ -1384,7 +1384,71 @@ def strategy_positions(strategy_id):
             'trailing_sl': strategy.trailing_sl  # Strategy-level trailing SL (Traditional)
         })
 
-    # Save unrealized P&L to database with error handling for database locks
+    # Calculate total P&L for trailing SL tracking
+    total_pnl = sum(float(p['pnl']) for p in data)
+
+    # Update Trailing SL tracking if enabled
+    tsl_status = {
+        'enabled': bool(strategy.trailing_sl and strategy.trailing_sl > 0),
+        'active': False,
+        'no_positions': False,
+        'peak_pnl': 0.0,
+        'trigger_pnl': None,
+        'current_pnl': total_pnl,
+        'trailing_pct': strategy.trailing_sl or 0
+    }
+
+    if tsl_status['enabled']:
+        # Get open positions count
+        open_positions_count = sum(1 for p in data if not p['is_closed'] and int(p['quantity']) != 0)
+
+        if open_positions_count > 0:
+            # TSL only activates when there's profit to protect
+            if total_pnl > 0:
+                tsl_status['active'] = True
+
+                # Update peak P&L if current is higher
+                current_peak = strategy.trailing_sl_peak_pnl or 0.0
+                if total_pnl > current_peak:
+                    strategy.trailing_sl_peak_pnl = total_pnl
+                    strategy.trailing_sl_active = True
+                    current_peak = total_pnl
+
+                tsl_status['peak_pnl'] = current_peak
+
+                # Calculate trigger level based on trailing SL type
+                trailing_value = strategy.trailing_sl
+                trailing_type = strategy.trailing_sl_type or 'percentage'
+
+                if trailing_type == 'percentage':
+                    # Trigger when P&L drops by X% from peak
+                    trigger_pnl = current_peak * (1 - trailing_value / 100)
+                elif trailing_type == 'points':
+                    # Trigger when P&L drops by X points from peak
+                    trigger_pnl = current_peak - trailing_value
+                else:  # 'amount'
+                    # Trigger when P&L drops by X rupees from peak
+                    trigger_pnl = current_peak - trailing_value
+
+                strategy.trailing_sl_trigger_pnl = trigger_pnl
+                tsl_status['trigger_pnl'] = trigger_pnl
+
+                # Check if TSL should trigger (P&L dropped below trigger)
+                if total_pnl <= trigger_pnl and not strategy.trailing_sl_triggered_at:
+                    tsl_status['should_exit'] = True
+                    logger.warning(f"[TSL] Strategy {strategy.name}: P&L {total_pnl} dropped below trigger {trigger_pnl}")
+            else:
+                # P&L not positive, TSL inactive but has positions
+                tsl_status['active'] = False
+                tsl_status['peak_pnl'] = strategy.trailing_sl_peak_pnl or 0.0
+        else:
+            # No open positions, reset TSL tracking
+            tsl_status['no_positions'] = True
+            strategy.trailing_sl_active = False
+            strategy.trailing_sl_peak_pnl = 0.0
+            strategy.trailing_sl_trigger_pnl = None
+
+    # Save unrealized P&L and TSL state to database with error handling for database locks
     try:
         db.session.commit()
     except Exception as e:
@@ -1393,7 +1457,9 @@ def strategy_positions(strategy_id):
 
     return jsonify({
         'status': 'success',
-        'data': data
+        'data': data,
+        'total_pnl': total_pnl,
+        'tsl_status': tsl_status
     })
 
 @strategy_bp.route('/<int:strategy_id>/close-all', methods=['POST'])

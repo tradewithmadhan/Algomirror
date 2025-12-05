@@ -170,8 +170,11 @@ class OrderStatusPoller:
                     # Update based on broker status
                     if broker_status == 'complete':
                         # Determine if this is entry or exit order
-                        is_entry_order = execution.status == 'pending'
-                        is_exit_order = execution.status == 'entered' or execution.exit_order_id == order_id
+                        # IMPORTANT: Use order_id comparison instead of status to avoid race condition
+                        # Status can be changed by sync_order_status (called from frontend poll) before
+                        # the background poller checks, leading to entry orders being treated as exits
+                        is_entry_order = execution.order_id == order_id and execution.exit_order_id != order_id
+                        is_exit_order = execution.exit_order_id == order_id
 
                         # If average_price is missing/zero, wait 3 seconds and re-fetch
                         # Some brokers return complete status before average_price is populated
@@ -255,9 +258,16 @@ class OrderStatusPoller:
 
                             logger.info(f"[CLOSED] Exit order {order_id} FILLED at Rs.{avg_price} ({order_info['account_name']})")
 
-                        # Remove from polling queue
-                        with self._lock:
-                            self.pending_orders.pop(execution_id, None)
+                        else:
+                            # Edge case: order_id doesn't match either entry or exit
+                            # This can happen if the execution record was modified
+                            # Skip processing but log for debugging
+                            logger.warning(f"[WARNING] Order {order_id} doesn't match execution's order_id ({execution.order_id}) or exit_order_id ({execution.exit_order_id}), skipping")
+
+                        # Remove from polling queue (only if we processed it)
+                        if is_entry_order or is_exit_order:
+                            with self._lock:
+                                self.pending_orders.pop(execution_id, None)
 
                     elif broker_status in ['rejected', 'cancelled']:
                         execution.status = 'failed'
