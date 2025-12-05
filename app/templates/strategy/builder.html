@@ -1457,7 +1457,17 @@ async function checkAndFreezePendingLegs() {
                     legItem.dataset.legId = legOrders[0].leg_id;
                 }
 
-                if (legOrders.length === 0) return;
+                if (legOrders.length === 0) {
+                    // No orders found for this leg
+                    // If the leg is already marked as pending/executed, keep it frozen
+                    // This handles the case where orders haven't been fetched yet
+                    if (legItem.dataset.isPending === 'true') {
+                        console.log(`Leg ${legNumber} has no orders but is marked PENDING, keeping frozen`);
+                    } else if (legItem.dataset.isExecuted === 'true') {
+                        console.log(`Leg ${legNumber} has no orders but is marked EXECUTED, keeping frozen`);
+                    }
+                    return;
+                }
 
                 // Check order statuses
                 const hasOpen = legOrders.some(o => o.order_status === 'open');
@@ -1475,9 +1485,14 @@ async function checkAndFreezePendingLegs() {
                     // Freeze account selection when any leg is executed
                     freezeAccountsIfExecuted();
                 } else if (allFailed) {
-                    // All failed - unfreeze
-                    console.log(`Leg ${legNumber} orders failed, keeping unfrozen`);
-                    freezeLeg(legItem, false, false);
+                    // All failed - unfreeze ONLY if not already marked as executed
+                    // This prevents accidentally unfreezing a successfully executed leg
+                    if (legItem.dataset.isExecuted !== 'true' && legItem.dataset.isPending !== 'true') {
+                        console.log(`Leg ${legNumber} orders failed, unfreezing`);
+                        freezeLeg(legItem, false, false);
+                    } else {
+                        console.log(`Leg ${legNumber} has failed orders but was previously marked, keeping state`);
+                    }
                 }
             });
         }
@@ -1740,6 +1755,18 @@ function saveStrategy(execute = false) {
                     // Handle different execution statuses
                     if (execData.status === 'success' || execData.status === 'partial') {
                         showNotification(execData.message || 'Orders placed successfully!', 'success');
+
+                        // IMMEDIATELY freeze all non-frozen legs as PENDING
+                        // This ensures newly executed legs are marked before any refresh
+                        document.querySelectorAll('.leg-item').forEach(legItem => {
+                            // Skip already executed/frozen legs
+                            if (legItem.dataset.isExecuted === 'true' || legItem.dataset.isPending === 'true') {
+                                return;
+                            }
+                            // Freeze as pending (order placed, waiting for fill confirmation)
+                            console.log('Immediately freezing newly executed leg as PENDING');
+                            freezeLeg(legItem, false, true);
+                        });
 
                         // Reload strategy data and check for pending orders
                         setTimeout(() => {

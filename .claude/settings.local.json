@@ -35,7 +35,8 @@
       "Bash(D:openalgo-multialgomirror.venvScriptspython.exe -m py_compile:*)",
       "Bash(.venv\\Scripts\\python.exe -c:*)",
       "Bash(curl:*)",
-      "Bash(.venv/Scripts/python.exe -m py_compile:*)"
+      "Bash(.venv/Scripts/python.exe -m py_compile:*)",
+      "Bash(.venvScriptspython.exe -m py_compile appstrategyroutes.py apputilsstrategy_executor.py)"
     ],
     "deny": [],
     "ask": []

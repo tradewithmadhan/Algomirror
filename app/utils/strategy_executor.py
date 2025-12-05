@@ -189,6 +189,49 @@ class StrategyExecutor:
         logger.info(f"[COMPLETED] All {len(legs)} legs completed. Total orders: {len(results)}")
         print(f"[EXECUTE END] Total orders placed: {len(results)}")
 
+        # CRITICAL: Mark legs as executed in the MAIN session after all threads complete
+        # This ensures the commit happens in the correct session context
+        print(f"\n[MAIN SESSION] ========== STARTING ==========")
+        print(f"[MAIN SESSION] Processing {len(legs)} legs, {len(results)} results")
+        print(f"[MAIN SESSION] Results dump: {results}")
+        logger.info(f"[MAIN SESSION] Processing {len(legs)} legs, {len(results)} results")
+
+        for leg in legs:
+            # Check if this leg had any results at all (order was attempted)
+            leg_results = [r for r in results if r.get('leg') == leg.leg_number]
+            successful = [r for r in leg_results if r.get('status') in ['success', 'pending']]
+            print(f"[MAIN SESSION] Leg {leg.leg_number} (id={leg.id}): {len(leg_results)} results, {len(successful)} successful")
+            logger.info(f"[MAIN SESSION] Leg {leg.leg_number} (id={leg.id}): {len(leg_results)} results, {len(successful)} successful")
+
+            # Mark as executed if we have any results (successful or not) - order was attempted
+            # This prevents leg from being deleted on next save
+            if leg_results:
+                try:
+                    # Refresh leg object from database to ensure we're in the right session
+                    fresh_leg = StrategyLeg.query.get(leg.id)
+                    print(f"[MAIN SESSION] Fresh leg query: {fresh_leg}, is_executed={fresh_leg.is_executed if fresh_leg else 'N/A'}")
+                    logger.info(f"[MAIN SESSION] Fresh leg query result: {fresh_leg}, is_executed={fresh_leg.is_executed if fresh_leg else 'N/A'}")
+                    if fresh_leg and not fresh_leg.is_executed:
+                        fresh_leg.is_executed = True
+                        db.session.commit()
+                        print(f"[MAIN SESSION] Leg {leg.leg_number} marked as is_executed=True - COMMITTED")
+                        logger.info(f"[MAIN SESSION] Leg {leg.leg_number} marked as is_executed=True")
+                    elif fresh_leg and fresh_leg.is_executed:
+                        print(f"[MAIN SESSION] Leg {leg.leg_number} already is_executed=True, skipping")
+                        logger.info(f"[MAIN SESSION] Leg {leg.leg_number} already is_executed=True, skipping")
+                    else:
+                        print(f"[MAIN SESSION] WARNING: Leg {leg.leg_number} not found in database!")
+                        logger.warning(f"[MAIN SESSION] Leg {leg.leg_number} not found in database!")
+                except Exception as e:
+                    print(f"[MAIN SESSION] ERROR: Failed to mark leg {leg.leg_number} as executed: {e}")
+                    logger.error(f"[MAIN SESSION] Failed to mark leg {leg.leg_number} as executed: {e}")
+                    db.session.rollback()
+            else:
+                print(f"[MAIN SESSION] Leg {leg.leg_number} had no results at all - order not attempted?")
+                logger.warning(f"[MAIN SESSION] Leg {leg.leg_number} had no results - order may not have been attempted")
+
+        print(f"[MAIN SESSION] ========== COMPLETED ==========")
+
         return results
 
     def _execute_leg_parallel(self, leg: StrategyLeg, results: List, results_lock):
@@ -306,14 +349,18 @@ class StrategyExecutor:
         for failed in failed_orders:
             logger.error(f"Failed order on {failed.get('account', 'unknown')}: {failed.get('error', 'unknown error')}")
 
+        # Note: is_executed=True is now set in the MAIN session after all threads complete
+        # This thread-level attempt is kept as a backup but may fail due to session conflicts
         if successful_orders:
             try:
-                # Mark leg as executed in current session
+                # Try to mark leg as executed in thread session (backup, main session handles this)
                 leg.is_executed = True
                 db.session.commit()
-                logger.debug(f"Leg {leg.leg_number} marked as executed (main session)")
+                logger.debug(f"Leg {leg.leg_number} marked as executed (thread session - backup)")
             except Exception as e:
-                logger.error(f"Failed to mark leg as executed: {e}")
+                # This is expected to fail sometimes due to session conflicts
+                # The main session commit after threads complete will handle it
+                logger.debug(f"Thread session commit for leg {leg.leg_number} failed (expected): {e}")
                 db.session.rollback()
 
         return results

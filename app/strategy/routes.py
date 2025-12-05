@@ -200,27 +200,39 @@ def builder(strategy_id=None):
             # Save strategy first to get ID
             db.session.flush()
 
-            # When updating, only delete non-executed legs (preserve executed ones)
+            # When updating, preserve legs that have been executed OR have pending orders
             if strategy_id:
-                # Get existing executed legs to preserve them
-                existing_executed_legs = StrategyLeg.query.filter_by(
-                    strategy_id=strategy.id,
-                    is_executed=True
-                ).all()
+                # Get all existing legs
+                all_existing_legs = StrategyLeg.query.filter_by(strategy_id=strategy.id).all()
 
-                # Delete only non-executed legs
-                StrategyLeg.query.filter_by(
-                    strategy_id=strategy.id,
-                    is_executed=False
-                ).delete()
+                # Determine which legs to preserve:
+                # 1. is_executed=True (already executed)
+                # 2. Legs with StrategyExecution records (orders placed, even if is_executed=False)
+                legs_to_delete = []
+                legs_to_preserve = []
 
-                logger.info(f"Preserved {len(existing_executed_legs)} executed legs, deleted non-executed legs")
+                for leg in all_existing_legs:
+                    # Check if leg has any execution records
+                    has_executions = StrategyExecution.query.filter_by(leg_id=leg.id).first() is not None
 
-            # Calculate starting leg number (after existing executed legs)
-            existing_leg_count = StrategyLeg.query.filter_by(
-                strategy_id=strategy.id,
-                is_executed=True
-            ).count() if strategy_id else 0
+                    if leg.is_executed or has_executions:
+                        legs_to_preserve.append(leg)
+                        # Fix: If leg has executions but is_executed=False, update it
+                        if has_executions and not leg.is_executed:
+                            logger.warning(f"Leg {leg.leg_number} has executions but is_executed=False, fixing...")
+                            leg.is_executed = True
+                    else:
+                        legs_to_delete.append(leg)
+
+                # Delete only truly non-executed legs (no orders placed)
+                for leg in legs_to_delete:
+                    db.session.delete(leg)
+
+                logger.info(f"Preserved {len(legs_to_preserve)} legs (executed or with orders), deleted {len(legs_to_delete)} unused legs")
+
+            # Calculate starting leg number (count of preserved legs)
+            # Since we just fixed is_executed for legs with executions, we can simply count is_executed=True
+            existing_leg_count = len(legs_to_preserve) if strategy_id else 0
 
             # Add NEW strategy legs (only the ones from the form)
             for i, leg_data in enumerate(data.get('legs', [])):
