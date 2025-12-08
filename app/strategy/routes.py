@@ -1592,14 +1592,14 @@ def close_all_positions(strategy_id):
                         position_to_update = StrategyExecution.query.get(position.id)
 
                         if position_to_update:
-                            # Update position status
-                            position_to_update.status = 'exited'
+                            # Update position status to exit_pending (poller will update to 'exited' with actual fill price)
+                            position_to_update.status = 'exit_pending'
                             position_to_update.exit_order_id = exit_order_id  # Store the real exit order ID
                             position_to_update.exit_time = datetime.utcnow()
                             position_to_update.exit_reason = 'manual_close'
-                            position_to_update.broker_order_status = 'complete'
+                            position_to_update.broker_order_status = 'open'  # Will be updated by poller
 
-                            # Get exit price
+                            # Set preliminary exit price from LTP (will be updated by poller with actual fill price)
                             try:
                                 quote = client.quotes(symbol=position.symbol, exchange=position.exchange)
                                 position_to_update.exit_price = float(quote.get('data', {}).get('ltp', 0))
@@ -1607,7 +1607,7 @@ def close_all_positions(strategy_id):
                                 logger.warning(f"[THREAD] Failed to fetch exit price for {position.symbol}: {quote_error}")
                                 position_to_update.exit_price = position_to_update.entry_price  # Fallback to entry price
 
-                            # Calculate realized P&L
+                            # Calculate preliminary realized P&L (will be updated by poller with actual fill price)
                             if position.leg.action == 'BUY':
                                 position_to_update.realized_pnl = (position_to_update.exit_price - position_to_update.entry_price) * position_to_update.quantity
                             else:
@@ -1616,7 +1616,16 @@ def close_all_positions(strategy_id):
                             # Commit position update
                             db.session.commit()
 
-                            logger.info(f"[THREAD SUCCESS] Closed {position.symbol}, P&L: {position_to_update.realized_pnl}")
+                            # Add exit order to poller to get actual fill price (same as entry orders)
+                            from app.utils.order_status_poller import order_status_poller
+                            order_status_poller.add_order(
+                                execution_id=position_to_update.id,
+                                account=position.account,
+                                order_id=exit_order_id,
+                                strategy_name=position.strategy.name if position.strategy else 'Unknown'
+                            )
+
+                            logger.info(f"[THREAD SUCCESS] Exit order placed for {position.symbol}, order_id: {exit_order_id} (polling for fill price)")
 
                             with results_lock:
                                 results.append({
@@ -1844,14 +1853,14 @@ def close_individual_position(strategy_id):
             # Get exit order ID from response
             exit_order_id = response.get('orderid')
 
-            # Update position status - ONLY after broker confirms success
-            position.status = 'exited'
+            # Update position status to exit_pending (poller will update to 'exited' with actual fill price)
+            position.status = 'exit_pending'
             position.exit_order_id = exit_order_id
             position.exit_time = datetime.utcnow()
             position.exit_reason = 'manual_close'
-            position.broker_order_status = 'complete'
+            position.broker_order_status = 'open'  # Will be updated by poller
 
-            # Get actual exit price from broker
+            # Set preliminary exit price from LTP (will be updated by poller with actual fill price)
             try:
                 quote = client.quotes(symbol=symbol, exchange=exchange)
                 position.exit_price = float(quote.get('data', {}).get('ltp', 0))
@@ -1859,7 +1868,7 @@ def close_individual_position(strategy_id):
                 logger.warning(f"Failed to fetch exit price for {symbol}: {quote_error}")
                 position.exit_price = position.entry_price
 
-            # Calculate P&L
+            # Calculate preliminary P&L (will be updated by poller with actual fill price)
             if position.leg.action == 'BUY':
                 pnl = (position.exit_price - position.entry_price) * position.quantity
             else:
@@ -1869,11 +1878,20 @@ def close_individual_position(strategy_id):
 
             db.session.commit()
 
-            logger.info(f"Position closed successfully: {symbol}, Exit Order: {exit_order_id}, P&L: ₹{pnl:.2f}")
+            # Add exit order to poller to get actual fill price (same as entry orders)
+            from app.utils.order_status_poller import order_status_poller
+            order_status_poller.add_order(
+                execution_id=position.id,
+                account=position.account,
+                order_id=exit_order_id,
+                strategy_name=position.strategy.name if position.strategy else 'Unknown'
+            )
+
+            logger.info(f"Exit order placed for {symbol}, order_id: {exit_order_id} (polling for fill price)")
 
             return jsonify({
                 'status': 'success',
-                'message': f'Position closed for {symbol}',
+                'message': f'Position close order placed for {symbol}',
                 'pnl': pnl,
                 'orderid': exit_order_id
             })
@@ -2075,42 +2093,35 @@ def close_leg_all_accounts(strategy_id):
                         position_to_update = StrategyExecution.query.get(position.id)
 
                         if position_to_update:
-                            # Update position status - ONLY after broker confirms success
-                            position_to_update.status = 'exited'
+                            # Update position status - set to exit_pending, poller will update to exited with actual fill price
+                            position_to_update.status = 'exit_pending'
                             position_to_update.exit_order_id = exit_order_id
                             position_to_update.exit_time = datetime.utcnow()
                             position_to_update.exit_reason = 'manual_leg_close'
-                            position_to_update.broker_order_status = 'complete'
+                            position_to_update.broker_order_status = 'open'
 
-                            # Get actual exit price from broker
-                            try:
-                                quote = client.quotes(symbol=position.symbol, exchange=position.exchange)
-                                position_to_update.exit_price = float(quote.get('data', {}).get('ltp', 0))
-                            except Exception as quote_error:
-                                logger.warning(f"[THREAD] Failed to fetch exit price for {position.symbol}: {quote_error}")
-                                position_to_update.exit_price = position_to_update.entry_price
-
-                            # Calculate realized P&L
-                            if position.leg.action == 'BUY':
-                                pnl = (position_to_update.exit_price - position_to_update.entry_price) * position_to_update.quantity
-                            else:
-                                pnl = (position_to_update.entry_price - position_to_update.exit_price) * position_to_update.quantity
-
-                            position_to_update.realized_pnl = pnl
-
-                            # Commit only after all updates
+                            # Commit the pending status
                             db.session.commit()
+
+                            # Add exit order to poller to get actual fill price (same as entry orders)
+                            from app.utils.order_status_poller import order_status_poller
+                            order_status_poller.add_order(
+                                execution_id=position_to_update.id,
+                                account=position_to_update.account,
+                                order_id=exit_order_id,
+                                strategy_name=strategy_name
+                            )
 
                             with results_lock:
                                 results.append({
                                     'status': 'success',
                                     'symbol': position.symbol,
                                     'account': position.account.account_name,
-                                    'pnl': pnl,
+                                    'pnl': 0,  # P&L will be calculated by poller when fill price is received
                                     'orderid': exit_order_id
                                 })
 
-                            logger.info(f"[THREAD] Successfully closed leg position: {position.symbol}, Exit Order: {exit_order_id}, P&L: ₹{pnl:.2f}")
+                            logger.info(f"[THREAD] Exit order placed for leg position: {position.symbol}, Exit Order: {exit_order_id} (awaiting fill price from poller)")
                         else:
                             logger.error(f"[THREAD] Position {position.id} not found in database after close")
                             with results_lock:

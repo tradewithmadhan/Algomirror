@@ -447,9 +447,21 @@ class RiskManager:
                             f"Order ID {order_id}"
                         )
 
-                        # Update execution status
+                        # Update execution status - poller will update to exited with actual fill price
                         execution.status = 'exit_pending'
                         execution.exit_order_id = order_id
+                        execution.broker_order_status = 'open'
+                        execution.exit_time = datetime.utcnow()
+                        execution.exit_reason = risk_event.event_type
+
+                        # Add exit order to poller to get actual fill price (same as entry orders)
+                        from app.utils.order_status_poller import order_status_poller
+                        order_status_poller.add_order(
+                            execution_id=execution.id,
+                            account=execution.account,
+                            order_id=order_id,
+                            strategy_name=strategy.name
+                        )
 
                     else:
                         logger.error(

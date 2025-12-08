@@ -581,36 +581,33 @@ class SupertrendExitService:
                                         response = {'status': 'error', 'message': f'API error after {max_retries} retries'}
 
                             if response and response.get('status') == 'success':
-                                # Update position
+                                # Update position - set to exit_pending, poller will update with actual fill price
                                 position_to_update = StrategyExecution.query.get(position.id)
                                 if position_to_update:
-                                    position_to_update.status = 'exited'
-                                    position_to_update.exit_order_id = response.get('orderid')
+                                    exit_order_id = response.get('orderid')
+                                    position_to_update.status = 'exit_pending'
+                                    position_to_update.exit_order_id = exit_order_id
                                     position_to_update.exit_time = datetime.utcnow()
                                     position_to_update.exit_reason = exit_reason
-                                    position_to_update.broker_order_status = 'complete'
-
-                                    # Get exit price
-                                    try:
-                                        quote = client.quotes(symbol=position.symbol, exchange=position.exchange)
-                                        position_to_update.exit_price = float(quote.get('data', {}).get('ltp', 0))
-                                    except:
-                                        position_to_update.exit_price = position_to_update.entry_price
-
-                                    # Calculate realized P&L
-                                    if position.leg.action == 'BUY':
-                                        position_to_update.realized_pnl = (position_to_update.exit_price - position_to_update.entry_price) * position_to_update.quantity
-                                    else:
-                                        position_to_update.realized_pnl = (position_to_update.entry_price - position_to_update.exit_price) * position_to_update.quantity
+                                    position_to_update.broker_order_status = 'open'
 
                                     db.session.commit()
+
+                                    # Add exit order to poller to get actual fill price (same as entry orders)
+                                    from app.utils.order_status_poller import order_status_poller
+                                    order_status_poller.add_order(
+                                        execution_id=position_to_update.id,
+                                        account=position_to_update.account,
+                                        order_id=exit_order_id,
+                                        strategy_name=strategy_name
+                                    )
 
                                     with results_lock:
                                         results.append({
                                             'symbol': position.symbol,
                                             'account': position.account.account_name,
                                             'status': 'success',
-                                            'pnl': position_to_update.realized_pnl
+                                            'pnl': 0  # P&L will be calculated by poller when fill price is received
                                         })
                             else:
                                 error_msg = response.get('message', 'Unknown error') if response else 'No response'
