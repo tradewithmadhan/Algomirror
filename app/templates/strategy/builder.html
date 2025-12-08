@@ -2874,12 +2874,15 @@ async function fetchCombinedPremium() {
 }
 
 // Start combined premium polling when page loads (if supertrend is enabled)
-if (supertrendEnabled && strategyIdForRisk) {
+// Check using Jinja value for initial page load
+{% if strategy and strategy.supertrend_exit_enabled %}
+if (strategyIdForRisk) {
     document.addEventListener('DOMContentLoaded', function() {
         // Delay slightly to let other initializations complete
         setTimeout(startCombinedPremiumPolling, 1000);
     });
 }
+{% endif %}
 
 async function loadOrderbook(strategyId) {
     try {
