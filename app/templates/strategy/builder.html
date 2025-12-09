@@ -667,6 +667,18 @@
                                     {{ 'Triggered' if strategy.supertrend_exit_triggered else 'Active' }}
                                 </span>
                             </div>
+                            {% if strategy.supertrend_exit_triggered and strategy.supertrend_exit_reason %}
+                            <div class="text-sm mt-2" id="riskSupertrendReason">
+                                <span class="text-base-content/60">Reason:</span>
+                                <span class="text-error text-xs ml-1">{{ strategy.supertrend_exit_reason }}</span>
+                            </div>
+                            {% if strategy.supertrend_exit_triggered_at %}
+                            <div class="text-sm mt-1">
+                                <span class="text-base-content/60">Time:</span>
+                                <span class="text-xs ml-1">{{ strategy.supertrend_exit_triggered_at.strftime('%d-%b %H:%M:%S') }} UTC</span>
+                            </div>
+                            {% endif %}
+                            {% endif %}
                             <div class="mt-2">
                                 <a href="{{ url_for('tradingview.strategy_monitor', strategy_id=strategy.id) }}" class="btn btn-info btn-xs" target="_blank">
                                     View Spread Monitor
@@ -2420,6 +2432,51 @@ function updateRiskStatusDisplay(data) {
         }
     } else if (legRiskTracking) {
         legRiskTracking.classList.add('hidden');
+    }
+
+    // Update Supertrend exit status and reason
+    const supertrendStatusEl = document.getElementById('riskSupertrendStatus');
+    if (supertrendStatusEl && strategyData.supertrend_exit_enabled) {
+        if (strategyData.supertrend_exit_triggered) {
+            supertrendStatusEl.textContent = 'Triggered';
+            supertrendStatusEl.className = 'badge badge-error badge-sm ml-1';
+        } else {
+            supertrendStatusEl.textContent = 'Active';
+            supertrendStatusEl.className = 'badge badge-success badge-sm ml-1';
+        }
+    }
+
+    // Update or create Supertrend exit reason display
+    const supertrendCard = document.getElementById('supertrendCard');
+    if (supertrendCard && strategyData.supertrend_exit_triggered && strategyData.supertrend_exit_reason) {
+        let reasonEl = document.getElementById('riskSupertrendReason');
+        if (!reasonEl) {
+            // Create the reason element if it doesn't exist
+            const statusDiv = supertrendCard.querySelector('.text-sm:has(#riskSupertrendStatus)') ||
+                              supertrendCard.querySelector('div:nth-child(3)');
+            if (statusDiv) {
+                const reasonDiv = document.createElement('div');
+                reasonDiv.className = 'text-sm mt-2';
+                reasonDiv.id = 'riskSupertrendReason';
+                reasonDiv.innerHTML = `
+                    <span class="text-base-content/60">Reason:</span>
+                    <span class="text-error text-xs ml-1">${strategyData.supertrend_exit_reason}</span>
+                `;
+                statusDiv.insertAdjacentElement('afterend', reasonDiv);
+
+                // Add time if available
+                if (strategyData.supertrend_exit_triggered_at) {
+                    const timeDiv = document.createElement('div');
+                    timeDiv.className = 'text-sm mt-1';
+                    const exitTime = new Date(strategyData.supertrend_exit_triggered_at);
+                    timeDiv.innerHTML = `
+                        <span class="text-base-content/60">Time:</span>
+                        <span class="text-xs ml-1">${exitTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
+                    `;
+                    reasonDiv.insertAdjacentElement('afterend', timeDiv);
+                }
+            }
+        }
     }
 
     // Update last update time

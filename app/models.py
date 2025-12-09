@@ -291,6 +291,8 @@ class Strategy(db.Model):
     supertrend_multiplier = db.Column(db.Float, default=3.0)
     supertrend_timeframe = db.Column(db.String(10), default='10m')
     supertrend_exit_triggered = db.Column(db.Boolean, default=False)  # Track if exit was already executed
+    supertrend_exit_reason = db.Column(db.String(200))  # Stores the exit reason (e.g., "Breakout at Close: 150.25, ST: 145.50")
+    supertrend_exit_triggered_at = db.Column(db.DateTime)  # When the exit was triggered
 
     # Order settings
     product_order_type = db.Column(db.String(10), default='MIS')  # 'MIS' or 'NRML'

@@ -1453,7 +1453,9 @@ def get_risk_status():
                 'max_profit_pct': round(max_profit_pct, 1),
                 'executions': executions_data,
                 'supertrend_exit_enabled': strategy.supertrend_exit_enabled,
-                'supertrend_exit_triggered': strategy.supertrend_exit_triggered
+                'supertrend_exit_triggered': strategy.supertrend_exit_triggered,
+                'supertrend_exit_reason': strategy.supertrend_exit_reason,
+                'supertrend_exit_triggered_at': strategy.supertrend_exit_triggered_at.isoformat() if strategy.supertrend_exit_triggered_at else None
             })
 
         return jsonify({

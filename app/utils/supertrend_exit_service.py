@@ -487,8 +487,10 @@ class SupertrendExitService:
             try:
                 logger.info(f"[SUPERTREND EXIT] Initiating parallel exit for strategy {strategy.id}")
 
-                # Mark strategy as triggered to prevent re-triggering
+                # Mark strategy as triggered and store the reason
                 strategy.supertrend_exit_triggered = True
+                strategy.supertrend_exit_reason = exit_reason
+                strategy.supertrend_exit_triggered_at = datetime.utcnow()
                 db.session.commit()
 
                 # Get all open positions
