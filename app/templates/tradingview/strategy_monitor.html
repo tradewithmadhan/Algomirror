@@ -115,8 +115,8 @@
                 <div class="flex gap-2 items-center">
                     <!-- Chart Type Toggle -->
                     <div class="btn-group">
-                        <button id="lineChartBtn" class="btn btn-sm btn-active" onclick="setChartType('line')">Line</button>
-                        <button id="candleChartBtn" class="btn btn-sm" onclick="setChartType('candle')">Candle</button>
+                        <button id="lineChartBtn" class="btn btn-sm" onclick="setChartType('line')">Line</button>
+                        <button id="candleChartBtn" class="btn btn-sm btn-active" onclick="setChartType('candle')">Candle</button>
                     </div>
                     <button onclick="refreshChart()" class="btn btn-ghost btn-sm">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -206,7 +206,7 @@ let chart = null;
 let premiumSeries = null;
 let supertrendSeries = null;
 let autoUpdateInterval = null;
-let chartType = 'line'; // Default to line chart
+let chartType = 'candle'; // Default to candle chart
 let lastChartData = null; // Store last fetched data for chart type switching
 
 // Set chart type and reinitialize
