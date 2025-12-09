@@ -672,38 +672,33 @@
                             </div>
                             <div class="text-sm mb-2">
                                 <span class="text-base-content/60">Status:</span>
-                                <span class="badge {{ 'badge-error' if strategy.trailing_sl_triggered_at else 'badge-warning' if strategy.trailing_sl_active else 'badge-ghost' }} badge-sm ml-1" id="riskTrailingSLStatus">
-                                    {{ 'Triggered' if strategy.trailing_sl_triggered_at else 'Active' if strategy.trailing_sl_active else 'Waiting' }}
-                                </span>
+                                <span class="badge badge-ghost badge-sm ml-1" id="riskTrailingSLStatus">Waiting</span>
                             </div>
-                            {% if not strategy.trailing_sl_triggered_at %}
-                            <!-- TSL Tracking Display (AFL-style) -->
+                            <!-- TSL Tracking Display (AFL-style) - Always shown -->
                             <div class="grid grid-cols-2 gap-2 text-xs mt-2">
                                 <div>
                                     <span class="text-base-content/60">Peak P&L:</span>
-                                    <span class="font-mono text-success" id="riskTrailingSLPeak">₹{{ (strategy.trailing_sl_peak_pnl or 0)|round(2) }}</span>
+                                    <span class="font-mono text-success" id="riskTrailingSLPeak">₹0.00</span>
                                 </div>
                                 <div>
                                     <span class="text-base-content/60">Initial Stop:</span>
-                                    <span class="font-mono text-warning" id="riskTrailingSLInitial">{% if strategy.trailing_sl_initial_stop %}₹{{ strategy.trailing_sl_initial_stop|round(2) }}{% else %}--{% endif %}</span>
+                                    <span class="font-mono text-warning" id="riskTrailingSLInitial">--</span>
                                 </div>
                             </div>
                             <div class="text-xs mt-1">
                                 <span class="text-base-content/60">Current Stop:</span>
-                                <span class="font-mono text-error font-bold" id="riskTrailingSLTrigger">{% if strategy.trailing_sl_trigger_pnl %}₹{{ strategy.trailing_sl_trigger_pnl|round(2) }}{% else %}--{% endif %}</span>
+                                <span class="font-mono text-error font-bold" id="riskTrailingSLTrigger">--</span>
                                 <span class="text-base-content/40 text-[10px]">(ratchets up)</span>
                             </div>
-                            {% endif %}
-                            {% if strategy.trailing_sl_triggered_at and strategy.trailing_sl_exit_reason %}
-                            <div class="text-sm mt-2" id="riskTrailingSLReason">
+                            <!-- Exit reason shown when triggered -->
+                            <div class="text-sm mt-2 hidden" id="riskTrailingSLReasonDiv">
                                 <span class="text-base-content/60">Reason:</span>
-                                <span class="text-error text-xs ml-1">{{ strategy.trailing_sl_exit_reason }}</span>
+                                <span class="text-error text-xs ml-1" id="riskTrailingSLReason"></span>
                             </div>
-                            <div class="text-sm mt-1">
+                            <div class="text-sm mt-1 hidden" id="riskTrailingSLTimeDiv">
                                 <span class="text-base-content/60">Time:</span>
-                                <span class="text-xs ml-1">{{ strategy.trailing_sl_triggered_at.strftime('%d-%b %H:%M:%S') }} UTC</span>
+                                <span class="text-xs ml-1" id="riskTrailingSLTime"></span>
                             </div>
-                            {% endif %}
                         </div>
                         {% endif %}
 
@@ -2609,7 +2604,16 @@ function updateRiskStatusDisplay(data) {
 
     // Update Trailing SL status and values (AFL-style ratcheting)
     const tslStatusEl = document.getElementById('riskTrailingSLStatus');
+    const peakEl = document.getElementById('riskTrailingSLPeak');
+    const initialEl = document.getElementById('riskTrailingSLInitial');
+    const triggerEl = document.getElementById('riskTrailingSLTrigger');
+    const reasonDiv = document.getElementById('riskTrailingSLReasonDiv');
+    const reasonEl = document.getElementById('riskTrailingSLReason');
+    const timeDiv = document.getElementById('riskTrailingSLTimeDiv');
+    const timeEl = document.getElementById('riskTrailingSLTime');
+
     if (tslStatusEl && strategyData.trailing_sl) {
+        // Update status badge
         if (strategyData.trailing_sl_triggered_at) {
             tslStatusEl.textContent = 'Triggered';
             tslStatusEl.className = 'badge badge-error badge-sm ml-1';
@@ -2620,44 +2624,34 @@ function updateRiskStatusDisplay(data) {
             tslStatusEl.textContent = 'Waiting';
             tslStatusEl.className = 'badge badge-ghost badge-sm ml-1';
         }
-    }
 
-    // Update TSL tracking values (peak, initial, current stop)
-    if (strategyData.trailing_sl && !strategyData.trailing_sl_triggered_at) {
-        const peakEl = document.getElementById('riskTrailingSLPeak');
-        const initialEl = document.getElementById('riskTrailingSLInitial');
-        const triggerEl = document.getElementById('riskTrailingSLTrigger');
-
-        if (peakEl && strategyData.trailing_sl_peak_pnl !== undefined) {
+        // Always update TSL tracking values (peak, initial, current stop)
+        if (peakEl) {
             peakEl.textContent = `₹${(strategyData.trailing_sl_peak_pnl || 0).toFixed(2)}`;
         }
-        if (initialEl && strategyData.trailing_sl_initial_stop !== undefined) {
+        if (initialEl) {
             initialEl.textContent = strategyData.trailing_sl_initial_stop ? `₹${strategyData.trailing_sl_initial_stop.toFixed(2)}` : '--';
         }
-        if (triggerEl && strategyData.trailing_sl_current_stop !== undefined) {
+        if (triggerEl) {
             triggerEl.textContent = strategyData.trailing_sl_current_stop ? `₹${strategyData.trailing_sl_current_stop.toFixed(2)}` : '--';
         }
-    }
 
-    // Create Trailing SL exit reason display when triggered
-    const riskTrailingSLCard = document.getElementById('riskTrailingSLCard');
-    if (riskTrailingSLCard && strategyData.trailing_sl_triggered_at && strategyData.trailing_sl_exit_reason) {
-        if (!document.getElementById('riskTrailingSLReason')) {
-            const statusDiv = riskTrailingSLCard.querySelector('#riskTrailingSLStatus')?.parentElement;
-            if (statusDiv) {
-                const reasonDiv = document.createElement('div');
-                reasonDiv.className = 'text-sm mt-2';
-                reasonDiv.id = 'riskTrailingSLReason';
-                reasonDiv.innerHTML = `<span class="text-base-content/60">Reason:</span><span class="text-error text-xs ml-1">${strategyData.trailing_sl_exit_reason}</span>`;
-                statusDiv.insertAdjacentElement('afterend', reasonDiv);
-                if (strategyData.trailing_sl_triggered_at) {
-                    const timeDiv = document.createElement('div');
-                    timeDiv.className = 'text-sm mt-1';
+        // Show/hide exit reason based on triggered state
+        if (strategyData.trailing_sl_triggered_at && strategyData.trailing_sl_exit_reason) {
+            if (reasonDiv) {
+                reasonDiv.classList.remove('hidden');
+                if (reasonEl) reasonEl.textContent = strategyData.trailing_sl_exit_reason;
+            }
+            if (timeDiv) {
+                timeDiv.classList.remove('hidden');
+                if (timeEl) {
                     const exitTime = new Date(strategyData.trailing_sl_triggered_at);
-                    timeDiv.innerHTML = `<span class="text-base-content/60">Time:</span><span class="text-xs ml-1">${exitTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>`;
-                    reasonDiv.insertAdjacentElement('afterend', timeDiv);
+                    timeEl.textContent = exitTime.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
                 }
             }
+        } else {
+            if (reasonDiv) reasonDiv.classList.add('hidden');
+            if (timeDiv) timeDiv.classList.add('hidden');
         }
     }
 

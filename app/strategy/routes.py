@@ -1403,6 +1403,17 @@ def strategy_positions(strategy_id):
         open_positions_count = sum(1 for p in data if not p['is_closed'] and int(p['quantity']) != 0)
 
         if open_positions_count > 0:
+            # IMPORTANT: If we have open positions but TSL was previously triggered,
+            # it means a NEW trade was started - reset TSL tracking for new trade
+            if strategy.trailing_sl_triggered_at:
+                logger.info(f"[TSL] Strategy {strategy.name}: Resetting TSL for new trade (was triggered at {strategy.trailing_sl_triggered_at})")
+                strategy.trailing_sl_active = False
+                strategy.trailing_sl_peak_pnl = 0.0
+                strategy.trailing_sl_initial_stop = None
+                strategy.trailing_sl_trigger_pnl = None
+                strategy.trailing_sl_triggered_at = None
+                strategy.trailing_sl_exit_reason = None
+
             # Check if TSL was previously activated (persisted state)
             was_active = strategy.trailing_sl_active or False
             current_peak = strategy.trailing_sl_peak_pnl or 0.0
