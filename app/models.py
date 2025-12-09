@@ -607,7 +607,7 @@ class MarginRequirement(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     instrument = db.Column(db.String(50), nullable=False)  # 'NIFTY', 'BANKNIFTY', 'SENSEX'
 
-    # Margin values for different trade types (in INR per lot)
+    # Option Selling - Margin values for different trade types (in INR per lot)
     ce_pe_sell_expiry = db.Column(db.Float, default=205000)  # CE/PE Sell on Expiry
     ce_pe_sell_non_expiry = db.Column(db.Float, default=250000)  # CE/PE Sell on Non-Expiry
     ce_and_pe_sell_expiry = db.Column(db.Float, default=250000)  # CE & PE Sell on Expiry
@@ -615,13 +615,19 @@ class MarginRequirement(db.Model):
     futures_expiry = db.Column(db.Float, default=215000)  # Futures on Expiry
     futures_non_expiry = db.Column(db.Float, default=215000)  # Futures on Non-Expiry
 
-    # SENSEX specific margins
+    # Option Buying - Premium per lot (used to calculate lot size from cash margin)
+    option_buying_premium = db.Column(db.Float, default=20000)  # Premium per lot for NIFTY/BANKNIFTY
+
+    # SENSEX specific margins (Option Selling)
     sensex_ce_pe_sell_expiry = db.Column(db.Float, default=180000)
     sensex_ce_pe_sell_non_expiry = db.Column(db.Float, default=220000)
     sensex_ce_and_pe_sell_expiry = db.Column(db.Float, default=225000)
     sensex_ce_and_pe_sell_non_expiry = db.Column(db.Float, default=290000)
     sensex_futures_expiry = db.Column(db.Float, default=185000)
     sensex_futures_non_expiry = db.Column(db.Float, default=185000)
+
+    # SENSEX Option Buying - Premium per lot
+    sensex_option_buying_premium = db.Column(db.Float, default=20000)  # Premium per lot for SENSEX
 
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -649,7 +655,8 @@ class MarginRequirement(db.Model):
                 'ce_and_pe_sell_expiry': 250000,
                 'ce_and_pe_sell_non_expiry': 320000,
                 'futures_expiry': 215000,
-                'futures_non_expiry': 215000
+                'futures_non_expiry': 215000,
+                'option_buying_premium': 20000
             },
             {
                 'instrument': 'BANKNIFTY',
@@ -658,7 +665,8 @@ class MarginRequirement(db.Model):
                 'ce_and_pe_sell_expiry': 250000,
                 'ce_and_pe_sell_non_expiry': 320000,
                 'futures_expiry': 215000,
-                'futures_non_expiry': 215000
+                'futures_non_expiry': 215000,
+                'option_buying_premium': 20000
             },
             {
                 'instrument': 'SENSEX',
@@ -667,7 +675,8 @@ class MarginRequirement(db.Model):
                 'ce_and_pe_sell_expiry': 225000,
                 'ce_and_pe_sell_non_expiry': 290000,
                 'futures_expiry': 185000,
-                'futures_non_expiry': 185000
+                'futures_non_expiry': 185000,
+                'sensex_option_buying_premium': 20000
             }
         ]
 
@@ -695,6 +704,9 @@ class TradeQuality(db.Model):
     margin_percentage = db.Column(db.Float, nullable=False)  # 95%, 65%, 36%
     risk_level = db.Column(db.String(20))  # 'conservative', 'moderate', 'aggressive'
     description = db.Column(db.Text)
+    # Margin source: 'available' (cash + collateral) for sellers/hedgers
+    #                'cash' (cash only) for option buyers
+    margin_source = db.Column(db.String(20), default='available')  # 'available' or 'cash'
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

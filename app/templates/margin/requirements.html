@@ -297,22 +297,59 @@
         <div class="card bg-base-100 shadow-xl">
             <div class="card-body">
                 <h2 class="card-title mb-4">Trade Types</h2>
-                <div class="space-y-3">
+
+                <!-- Option Selling Section -->
+                <h3 class="font-semibold text-sm text-primary mt-2 mb-2">Option Selling (Uses Margin Requirements)</h3>
+                <div class="space-y-2 mb-4">
                     <div class="flex items-center justify-between p-3 bg-base-200 rounded">
                         <span class="font-medium">Sell CE / PE</span>
-                        <span class="badge badge-primary badge-lg">Single Option Sell</span>
+                        <span class="badge badge-primary">As per Margin Table</span>
                     </div>
                     <div class="flex items-center justify-between p-3 bg-base-200 rounded">
                         <span class="font-medium">Sell CE and PE</span>
-                        <span class="badge badge-info badge-lg">Spread Strategy</span>
-                    </div>
-                    <div class="flex items-center justify-between p-3 bg-base-200 rounded">
-                        <span class="font-medium">Option Buying</span>
-                        <span class="badge badge-success badge-lg">No Margin Blocked</span>
+                        <span class="badge badge-info">As per Margin Table</span>
                     </div>
                     <div class="flex items-center justify-between p-3 bg-base-200 rounded">
                         <span class="font-medium">Futures</span>
-                        <span class="badge badge-warning badge-lg">Futures Contract</span>
+                        <span class="badge badge-warning">As per Margin Table</span>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-base-200 rounded">
+                        <span class="font-medium">Option Buying</span>
+                        <span class="badge badge-ghost">No Margin Required</span>
+                    </div>
+                    <p class="text-xs text-base-content/60 mt-1 pl-1">Option buying only debits premium from cash, no margin blocked</p>
+                </div>
+
+                <!-- Option Buying Section -->
+                <h3 class="font-semibold text-sm text-success mt-2 mb-2">Option Buying (Uses Cash Margin)</h3>
+                <div class="space-y-3">
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text">NIFTY / BANKNIFTY Premium Per Lot</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="px-3 bg-base-200 flex items-center text-sm">Rs</span>
+                            <input type="number" id="option-buying-premium" class="input input-bordered input-sm flex-1"
+                                   value="{{ option_buying_premium | default(20000) }}" step="1000" min="0" />
+                        </div>
+                    </div>
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text">SENSEX Premium Per Lot</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="px-3 bg-base-200 flex items-center text-sm">Rs</span>
+                            <input type="number" id="sensex-option-buying-premium" class="input input-bordered input-sm flex-1"
+                                   value="{{ sensex_option_buying_premium | default(20000) }}" step="1000" min="0" />
+                        </div>
+                    </div>
+                    <button type="button" onclick="saveOptionBuyingPremium(this)" class="btn btn-success btn-sm w-full">
+                        Save Option Buying Settings
+                    </button>
+                    <div class="text-xs text-base-content/70 mt-2 p-2 bg-base-200 rounded">
+                        <strong>Formula:</strong> Lots = (Cash x Quality%) / Premium Per Lot<br/>
+                        <strong>Example:</strong> Cash = Rs 10,00,000, Grade = 5%, Premium = Rs 20,000<br/>
+                        Budget = 10,00,000 x 5% = Rs 50,000 → Lots = 50,000 / 20,000 = <strong>2 lots</strong>
                     </div>
                 </div>
             </div>
@@ -342,13 +379,24 @@
                                 <option value="aggressive" {% if qualities_dict and qualities_dict.get('A') and qualities_dict['A'].risk_level == 'aggressive' %}selected{% endif %}>Aggressive</option>
                             </select>
                         </div>
-                        <div class="form-control">
-                            <label class="label py-1">
-                                <span class="label-text">Margin Percentage (%)</span>
-                            </label>
-                            <input type="number" id="quality-a-percentage" class="input input-bordered input-sm"
-                                   min="1" max="100" step="1"
-                                   value="{{ qualities_dict['A'].margin_percentage if qualities_dict and qualities_dict.get('A') else 95 }}" />
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text">Margin Percentage (%)</span>
+                                </label>
+                                <input type="number" id="quality-a-percentage" class="input input-bordered input-sm"
+                                       min="1" max="100" step="1"
+                                       value="{{ qualities_dict['A'].margin_percentage if qualities_dict and qualities_dict.get('A') else 95 }}" />
+                            </div>
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text">Trade Type</span>
+                                </label>
+                                <select id="quality-a-margin-source" class="select select-bordered select-sm">
+                                    <option value="available" {% if not qualities_dict or not qualities_dict.get('A') or qualities_dict['A'].margin_source != 'cash' %}selected{% endif %}>Option Seller</option>
+                                    <option value="cash" {% if qualities_dict and qualities_dict.get('A') and qualities_dict['A'].margin_source == 'cash' %}selected{% endif %}>Option Buyer</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -365,13 +413,24 @@
                                 <option value="aggressive" {% if qualities_dict and qualities_dict.get('B') and qualities_dict['B'].risk_level == 'aggressive' %}selected{% endif %}>Aggressive</option>
                             </select>
                         </div>
-                        <div class="form-control">
-                            <label class="label py-1">
-                                <span class="label-text">Margin Percentage (%)</span>
-                            </label>
-                            <input type="number" id="quality-b-percentage" class="input input-bordered input-sm"
-                                   min="1" max="100" step="1"
-                                   value="{{ qualities_dict['B'].margin_percentage if qualities_dict and qualities_dict.get('B') else 65 }}" />
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text">Margin Percentage (%)</span>
+                                </label>
+                                <input type="number" id="quality-b-percentage" class="input input-bordered input-sm"
+                                       min="1" max="100" step="1"
+                                       value="{{ qualities_dict['B'].margin_percentage if qualities_dict and qualities_dict.get('B') else 65 }}" />
+                            </div>
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text">Trade Type</span>
+                                </label>
+                                <select id="quality-b-margin-source" class="select select-bordered select-sm">
+                                    <option value="available" {% if not qualities_dict or not qualities_dict.get('B') or qualities_dict['B'].margin_source != 'cash' %}selected{% endif %}>Option Seller</option>
+                                    <option value="cash" {% if qualities_dict and qualities_dict.get('B') and qualities_dict['B'].margin_source == 'cash' %}selected{% endif %}>Option Buyer</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -388,13 +447,24 @@
                                 <option value="aggressive" {% if qualities_dict and qualities_dict.get('C') and qualities_dict['C'].risk_level == 'aggressive' %}selected{% endif %}>Aggressive</option>
                             </select>
                         </div>
-                        <div class="form-control">
-                            <label class="label py-1">
-                                <span class="label-text">Margin Percentage (%)</span>
-                            </label>
-                            <input type="number" id="quality-c-percentage" class="input input-bordered input-sm"
-                                   min="1" max="100" step="1"
-                                   value="{{ qualities_dict['C'].margin_percentage if qualities_dict and qualities_dict.get('C') else 36 }}" />
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text">Margin Percentage (%)</span>
+                                </label>
+                                <input type="number" id="quality-c-percentage" class="input input-bordered input-sm"
+                                       min="1" max="100" step="1"
+                                       value="{{ qualities_dict['C'].margin_percentage if qualities_dict and qualities_dict.get('C') else 36 }}" />
+                            </div>
+                            <div class="form-control">
+                                <label class="label py-1">
+                                    <span class="label-text">Trade Type</span>
+                                </label>
+                                <select id="quality-c-margin-source" class="select select-bordered select-sm">
+                                    <option value="available" {% if not qualities_dict or not qualities_dict.get('C') or qualities_dict['C'].margin_source != 'cash' %}selected{% endif %}>Option Seller</option>
+                                    <option value="cash" {% if qualities_dict and qualities_dict.get('C') and qualities_dict['C'].margin_source == 'cash' %}selected{% endif %}>Option Buyer</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
 
@@ -420,12 +490,23 @@
                                     </button>
                                 </div>
                             </div>
-                            <div class="form-control">
-                                <label class="label py-1">
-                                    <span class="label-text">Margin Percentage (%)</span>
-                                </label>
-                                <input type="number" class="input input-bordered input-sm custom-grade-percentage"
-                                       min="1" max="100" step="1" value="{{ quality.margin_percentage }}" />
+                            <div class="grid grid-cols-2 gap-3">
+                                <div class="form-control">
+                                    <label class="label py-1">
+                                        <span class="label-text">Margin Percentage (%)</span>
+                                    </label>
+                                    <input type="number" class="input input-bordered input-sm custom-grade-percentage"
+                                           min="1" max="100" step="1" value="{{ quality.margin_percentage }}" />
+                                </div>
+                                <div class="form-control">
+                                    <label class="label py-1">
+                                        <span class="label-text">Trade Type</span>
+                                    </label>
+                                    <select class="select select-bordered select-sm custom-grade-margin-source">
+                                        <option value="available" {% if quality.margin_source != 'cash' %}selected{% endif %}>Option Seller</option>
+                                        <option value="cash" {% if quality.margin_source == 'cash' %}selected{% endif %}>Option Buyer</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                         {% endfor %}
@@ -633,12 +714,23 @@
                         </button>
                     </div>
                 </div>
-                <div class="form-control">
-                    <label class="label py-1">
-                        <span class="label-text">Margin Percentage (%)</span>
-                    </label>
-                    <input type="number" class="input input-bordered input-sm custom-grade-percentage"
-                           min="1" max="100" step="1" value="50" />
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text">Margin Percentage (%)</span>
+                        </label>
+                        <input type="number" class="input input-bordered input-sm custom-grade-percentage"
+                               min="1" max="100" step="1" value="50" />
+                    </div>
+                    <div class="form-control">
+                        <label class="label py-1">
+                            <span class="label-text">Trade Type</span>
+                        </label>
+                        <select class="select select-bordered select-sm custom-grade-margin-source">
+                            <option value="available" selected>Option Seller</option>
+                            <option value="cash">Option Buyer</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         `;
@@ -664,17 +756,20 @@
             {
                 grade: 'A',
                 percentage: parseFloat(document.getElementById('quality-a-percentage').value),
-                risk_level: document.getElementById('quality-a-risk').value
+                risk_level: document.getElementById('quality-a-risk').value,
+                margin_source: document.getElementById('quality-a-margin-source').value
             },
             {
                 grade: 'B',
                 percentage: parseFloat(document.getElementById('quality-b-percentage').value),
-                risk_level: document.getElementById('quality-b-risk').value
+                risk_level: document.getElementById('quality-b-risk').value,
+                margin_source: document.getElementById('quality-b-margin-source').value
             },
             {
                 grade: 'C',
                 percentage: parseFloat(document.getElementById('quality-c-percentage').value),
-                risk_level: document.getElementById('quality-c-risk').value
+                risk_level: document.getElementById('quality-c-risk').value,
+                margin_source: document.getElementById('quality-c-margin-source').value
             }
         ];
 
@@ -683,7 +778,8 @@
             const grade = item.dataset.grade;
             const percentage = parseFloat(item.querySelector('.custom-grade-percentage').value);
             const risk_level = item.querySelector('.custom-grade-risk').value;
-            qualities.push({ grade, percentage, risk_level });
+            const margin_source = item.querySelector('.custom-grade-margin-source').value;
+            qualities.push({ grade, percentage, risk_level, margin_source });
         });
 
         // Validate percentages
@@ -715,6 +811,58 @@
             }
         } catch (error) {
             showNotification('Error saving trade qualities: ' + error.message, 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalContent;
+        }
+    }
+
+    async function saveOptionBuyingPremium(saveBtn) {
+        // Disable save button and show loading
+        const originalContent = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="loading loading-spinner loading-xs mr-1"></span>Saving...';
+
+        const niftyPremium = parseFloat(document.getElementById('option-buying-premium').value);
+        const sensexPremium = parseFloat(document.getElementById('sensex-option-buying-premium').value);
+
+        // Validate
+        if (isNaN(niftyPremium) || niftyPremium < 0) {
+            showNotification('Invalid NIFTY/BANKNIFTY premium value', 'error');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalContent;
+            return;
+        }
+
+        if (isNaN(sensexPremium) || sensexPremium < 0) {
+            showNotification('Invalid SENSEX premium value', 'error');
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalContent;
+            return;
+        }
+
+        try {
+            const response = await fetch('/margin/update-option-buying-premium', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({
+                    option_buying_premium: niftyPremium,
+                    sensex_option_buying_premium: sensexPremium
+                })
+            });
+
+            const result = await response.json();
+
+            if (result.status === 'success') {
+                showNotification('Option buying premium saved successfully!', 'success');
+            } else {
+                throw new Error(result.message || 'Failed to save option buying premium');
+            }
+        } catch (error) {
+            showNotification('Error saving option buying premium: ' + error.message, 'error');
         } finally {
             saveBtn.disabled = false;
             saveBtn.innerHTML = originalContent;

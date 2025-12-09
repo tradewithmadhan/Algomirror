@@ -187,7 +187,7 @@
                                 <div class="badge badge-{{ 'success' if quality.quality_grade == 'A' else 'warning' if quality.quality_grade == 'B' else 'error' }}">
                                     {{ quality.margin_percentage }}%
                                 </div>
-                                <button onclick="openEditQualityModal('{{ quality.quality_grade }}', {{ quality.margin_percentage }}, '{{ quality.risk_level }}', '{{ quality.description }}')"
+                                <button onclick="openEditQualityModal('{{ quality.quality_grade }}', {{ quality.margin_percentage }}, '{{ quality.risk_level }}', '{{ quality.description }}', '{{ quality.margin_source or 'available' }}')"
                                         class="btn btn-ghost btn-xs">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
@@ -195,7 +195,7 @@
                                 </button>
                             </div>
                         </div>
-                        <p class="text-sm text-base-content/70">{{ quality.risk_level|title }}</p>
+                        <p class="text-sm text-base-content/70">{{ quality.risk_level|title }} - <span class="badge badge-sm {{ 'badge-success' if quality.margin_source == 'cash' else 'badge-primary' }}">{{ 'Option Buyer' if quality.margin_source == 'cash' else 'Option Seller' }}</span></p>
                         <p class="text-xs mt-2">{{ quality.description }}</p>
                     </div>
                 </div>
@@ -234,6 +234,16 @@
                         <option value="conservative">Conservative</option>
                         <option value="moderate">Moderate</option>
                         <option value="aggressive">Aggressive</option>
+                    </select>
+                </div>
+
+                <div class="form-control mb-4">
+                    <label class="label">
+                        <span class="label-text">Trade Type</span>
+                    </label>
+                    <select id="edit_margin_source" class="select select-bordered">
+                        <option value="available">Option Seller (Uses Margin Table)</option>
+                        <option value="cash">Option Buyer (Rs 20,000/Lot)</option>
                     </select>
                 </div>
 
@@ -313,11 +323,12 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // Trade Quality Edit Functions
-function openEditQualityModal(grade, marginPct, riskLevel, description) {
+function openEditQualityModal(grade, marginPct, riskLevel, description, marginSource) {
     document.getElementById('edit_quality_grade').value = grade;
     document.getElementById('edit_quality_grade_display').value = `Grade ${grade}`;
     document.getElementById('edit_margin_percentage').value = marginPct;
     document.getElementById('edit_risk_level').value = riskLevel;
+    document.getElementById('edit_margin_source').value = marginSource || 'available';
     document.getElementById('edit_description').value = description;
 
     document.getElementById('edit_quality_modal').showModal();
@@ -333,6 +344,7 @@ document.getElementById('editQualityForm').addEventListener('submit', async func
     const grade = document.getElementById('edit_quality_grade').value;
     const marginPct = document.getElementById('edit_margin_percentage').value;
     const riskLevel = document.getElementById('edit_risk_level').value;
+    const marginSource = document.getElementById('edit_margin_source').value;
     const description = document.getElementById('edit_description').value;
 
     try {
@@ -345,6 +357,7 @@ document.getElementById('editQualityForm').addEventListener('submit', async func
             body: JSON.stringify({
                 margin_percentage: parseFloat(marginPct),
                 risk_level: riskLevel,
+                margin_source: marginSource,
                 description: description
             })
         });

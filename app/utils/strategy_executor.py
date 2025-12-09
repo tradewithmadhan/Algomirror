@@ -50,9 +50,9 @@ class StrategyExecutor:
             'conservative': 'C'
         }
 
-        # Get margin percentage from TradeQuality table in database
+        # Get margin percentage and margin source from TradeQuality table in database
         # This ensures consistency with the Margin Calculator page
-        self.margin_percentage = self._get_margin_percentage_from_db(strategy)
+        self.margin_percentage, self.margin_source = self._get_margin_percentage_from_db(strategy)
 
         # Determine is_expiry based on market_condition setting
         # 'expiry' -> True (use expiry margins)
@@ -75,16 +75,21 @@ class StrategyExecutor:
         if use_margin_calculator:
             from app.utils.margin_calculator import MarginCalculator
             self.margin_calculator = MarginCalculator(strategy.user_id)
-            logger.info(f"Strategy {strategy.id} ({strategy.name}): Using {self.margin_percentage*100}% margin based on risk_profile '{strategy.risk_profile}'")
+            margin_type = "cash" if self.margin_source == 'cash' else "available"
+            logger.info(f"Strategy {strategy.id} ({strategy.name}): Using {self.margin_percentage*100}% {margin_type} margin based on risk_profile '{strategy.risk_profile}'")
 
-    def _get_margin_percentage_from_db(self, strategy: Strategy) -> float:
+    def _get_margin_percentage_from_db(self, strategy: Strategy) -> tuple:
         """
-        Fetch margin percentage from TradeQuality table in database.
+        Fetch margin percentage and margin source from TradeQuality table in database.
         This ensures consistency with the Margin Calculator page.
 
         Supports two formats:
         - New format: 'grade_A', 'grade_B', 'grade_C', 'grade_D', etc.
         - Legacy format: 'aggressive', 'balanced', 'conservative' (mapped to A, B, C)
+
+        Returns:
+            tuple: (margin_percentage as decimal, margin_source as string)
+                   margin_source: 'available' for option sellers, 'cash' for option buyers
         """
         from app.models import TradeQuality
 
@@ -92,7 +97,7 @@ class StrategyExecutor:
 
         # If fixed_lots or not set, return default
         if not risk_profile or risk_profile == 'fixed_lots':
-            return 0.65  # Default 65%
+            return 0.65, 'available'  # Default 65% of available margin
 
         # Determine quality grade from risk profile
         quality_grade = None
@@ -106,7 +111,7 @@ class StrategyExecutor:
 
         if not quality_grade:
             logger.warning(f"Unknown risk_profile '{risk_profile}', using default 65%")
-            return 0.65
+            return 0.65, 'available'
 
         try:
             # Fetch from TradeQuality table
@@ -118,16 +123,18 @@ class StrategyExecutor:
 
             if trade_quality and trade_quality.margin_percentage:
                 margin_pct = trade_quality.margin_percentage / 100  # Convert from 50 to 0.50
-                logger.info(f"Loaded margin percentage from DB: Grade {quality_grade} = {trade_quality.margin_percentage}%")
-                return margin_pct
+                # Get margin_source: 'available' for option sellers, 'cash' for option buyers
+                margin_source = getattr(trade_quality, 'margin_source', 'available') or 'available'
+                logger.info(f"Loaded from DB: Grade {quality_grade} = {trade_quality.margin_percentage}% {margin_source} margin")
+                return margin_pct, margin_source
             else:
                 # Fallback if not found in DB
                 logger.warning(f"TradeQuality not found for Grade {quality_grade}, using fallback 65%")
-                return 0.65
+                return 0.65, 'available'
 
         except Exception as e:
             logger.error(f"Error fetching TradeQuality from DB: {e}")
-            return 0.65
+            return 0.65, 'available'
 
     def _get_active_accounts(self) -> List[TradingAccount]:
         """Get active trading accounts for strategy"""
@@ -136,6 +143,27 @@ class StrategyExecutor:
             TradingAccount.id.in_(account_ids),
             TradingAccount.is_active == True
         ).all()
+
+    def _get_margin_for_account(self, account: TradingAccount) -> float:
+        """
+        Get the appropriate margin for an account based on margin_source setting.
+
+        For Option Sellers (margin_source='available'): Uses available margin (cash + collateral)
+        For Option Buyers (margin_source='cash'): Uses cash margin only
+        """
+        if not self.margin_calculator:
+            return 0.0
+
+        if self.margin_source == 'cash':
+            # Option buyers use cash margin only
+            margin = self.margin_calculator.get_cash_margin(account)
+            logger.info(f"[MARGIN] Using CASH margin for {account.account_name}: {margin:,.2f}")
+        else:
+            # Option sellers use available margin (cash + collateral)
+            margin = self.margin_calculator.get_available_margin(account)
+            logger.info(f"[MARGIN] Using AVAILABLE margin for {account.account_name}: {margin:,.2f}")
+
+        return margin
 
     def execute(self) -> List[Dict[str, Any]]:
         """Execute strategy across all selected accounts with PARALLEL leg execution"""
@@ -1205,9 +1233,40 @@ class StrategyExecutor:
                     logger.info(f"[QTY CALC DEBUG] Option buying is part of spread - using SELL leg margin calculation")
                     # Use 'sell_c_p' margin to calculate quantity (same as corresponding SELL leg)
                     trade_type = 'sell_c_p'
+                elif self.margin_source == 'cash':
+                    # Option Buyer grade selected: Calculate lots based on cash margin and premium per lot
+                    logger.info(f"[QTY CALC DEBUG] Option Buyer grade - calculating lots from cash margin and premium")
+
+                    # Get cash margin for the account
+                    if account.id not in self.account_margins:
+                        self.account_margins[account.id] = self._get_margin_for_account(account)
+                    cash_margin = self.account_margins[account.id]
+
+                    # Get option buying premium per lot from margin calculator
+                    premium_per_lot = self.margin_calculator.get_option_buying_premium(leg.instrument)
+
+                    # Calculate: effective_margin / premium_per_lot
+                    effective_margin = cash_margin * self.margin_percentage
+                    raw_lots = effective_margin / premium_per_lot if premium_per_lot > 0 else 0
+                    optimal_lots = int(raw_lots)
+
+                    logger.info(f"[QTY CALC DEBUG] Cash margin: {cash_margin:,.2f}, Margin %: {self.margin_percentage*100}%")
+                    logger.info(f"[QTY CALC DEBUG] Effective margin: {effective_margin:,.2f}, Premium/lot: {premium_per_lot:,.2f}")
+                    logger.info(f"[QTY CALC DEBUG] Raw lots: {raw_lots:.3f}, Optimal lots: {optimal_lots}")
+
+                    if optimal_lots > 0:
+                        # Update remaining margin for next trades
+                        margin_used = optimal_lots * premium_per_lot
+                        self.account_margins[account.id] -= margin_used
+                        total_quantity = optimal_lots * lot_size
+                        logger.info(f"[QTY CALC DEBUG] Option buying: {optimal_lots} lots × {lot_size} = {total_quantity} qty")
+                        return total_quantity
+                    else:
+                        logger.warning(f"[QTY CALC DEBUG] Insufficient cash margin for option buying")
+                        return 0
                 else:
-                    # Standalone option buying - no margin blocked, use leg's configured lots
-                    logger.info(f"[QTY CALC DEBUG] Standalone option buying - no margin required, using leg's configured lots")
+                    # Standalone option buying with Option Seller grade - no margin blocked, use leg's configured lots
+                    logger.info(f"[QTY CALC DEBUG] Standalone option buying (seller grade) - using leg's configured lots")
                     if leg.lots and leg.lots > 0:
                         total_quantity = leg.lots * lot_size
                     elif leg.quantity and leg.quantity > 0:
@@ -1218,26 +1277,29 @@ class StrategyExecutor:
                     logger.info(f"[QTY CALC DEBUG] Option buying quantity for {account.account_name}: {total_quantity} (lots={leg.lots}, lot_size={lot_size})")
                     return total_quantity
 
-            # Get available margin for the account
+            # Get margin for the account (cash or available based on margin_source)
             if account.id not in self.account_margins:
                 logger.info(f"[QTY CALC DEBUG] Fetching fresh margin for account {account.id}")
-                self.account_margins[account.id] = self.margin_calculator.get_available_margin(account)
+                self.account_margins[account.id] = self._get_margin_for_account(account)
             else:
                 logger.info(f"[QTY CALC DEBUG] Using cached margin for account {account.id}")
 
             available_margin = self.account_margins[account.id]
-            logger.info(f"[QTY CALC DEBUG] Available margin for {account.account_name}: ₹{available_margin:,.2f}")
+            margin_type = "cash" if self.margin_source == 'cash' else "available"
+            logger.info(f"[QTY CALC DEBUG] {margin_type.title()} margin for {account.account_name}: {available_margin:,.2f}")
             logger.info(f"[QTY CALC DEBUG] Risk profile: {self.strategy.risk_profile}, Margin %: {self.margin_percentage*100}%")
 
             # Calculate optimal lot size based on margin with custom percentage
             # Pass is_expiry based on strategy's market_condition setting
+            # Pass margin_source to determine option buyer vs seller calculation
             optimal_lots, details = self.margin_calculator.calculate_lot_size_custom(
                 account=account,
                 instrument=leg.instrument,
                 trade_type=trade_type,
                 margin_percentage=self.margin_percentage,
                 available_margin=available_margin,
-                is_expiry=self.is_expiry_override
+                is_expiry=self.is_expiry_override,
+                margin_source=self.margin_source
             )
 
             logger.info(f"[QTY CALC DEBUG] Calculated optimal lots: {optimal_lots}")
@@ -1488,21 +1550,23 @@ class StrategyExecutor:
 
         lot_size = self._get_lot_size(sell_legs[0])
 
-        # Get available margin for the account
+        # Get margin for the account (cash or available based on margin_source)
         if account.id not in self.account_margins:
-            self.account_margins[account.id] = self.margin_calculator.get_available_margin(account)
+            self.account_margins[account.id] = self._get_margin_for_account(account)
 
         available_margin = self.account_margins[account.id]
 
         # Calculate using 'sell_c_and_p' margin (covers both legs)
         # Pass is_expiry based on strategy's market_condition setting for consistency
+        # Pass margin_source to determine option buyer vs seller calculation
         optimal_lots, details = self.margin_calculator.calculate_lot_size_custom(
             account=account,
             instrument=instrument,
             trade_type='sell_c_and_p',  # Combined margin for CE+PE
             margin_percentage=self.margin_percentage,
             available_margin=available_margin,
-            is_expiry=self.is_expiry_override
+            is_expiry=self.is_expiry_override,
+            margin_source=self.margin_source
         )
 
         if optimal_lots > 0:
@@ -1540,21 +1604,23 @@ class StrategyExecutor:
 
         lot_size = self._get_lot_size(spread_legs[0])
 
-        # Get available margin for the account
+        # Get margin for the account (cash or available based on margin_source)
         if account.id not in self.account_margins:
-            self.account_margins[account.id] = self.margin_calculator.get_available_margin(account)
+            self.account_margins[account.id] = self._get_margin_for_account(account)
 
         available_margin = self.account_margins[account.id]
 
         # Calculate using 'sell_c_p' margin (single option selling)
         # Pass is_expiry based on strategy's market_condition setting for consistency
+        # Pass margin_source to determine option buyer vs seller calculation
         optimal_lots, details = self.margin_calculator.calculate_lot_size_custom(
             account=account,
             instrument=instrument,
             trade_type='sell_c_p',
             margin_percentage=self.margin_percentage,
             available_margin=available_margin,
-            is_expiry=self.is_expiry_override
+            is_expiry=self.is_expiry_override,
+            margin_source=self.margin_source
         )
 
         if optimal_lots > 0:

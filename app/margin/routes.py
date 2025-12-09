@@ -201,10 +201,30 @@ def requirements():
     # Convert to dict for easy template access
     qualities_dict = {q.quality_grade: q for q in trade_qualities}
 
+    # Get option buying premium values
+    option_buying_premium = 20000
+    sensex_option_buying_premium = 20000
+
+    nifty_req = MarginRequirement.query.filter_by(
+        user_id=current_user.id,
+        instrument='NIFTY'
+    ).first()
+    if nifty_req:
+        option_buying_premium = nifty_req.option_buying_premium or 20000
+
+    sensex_req = MarginRequirement.query.filter_by(
+        user_id=current_user.id,
+        instrument='SENSEX'
+    ).first()
+    if sensex_req:
+        sensex_option_buying_premium = sensex_req.sensex_option_buying_premium or 20000
+
     return render_template('margin/requirements.html',
                          requirements=requirements,
                          trade_qualities=trade_qualities,
-                         qualities_dict=qualities_dict)
+                         qualities_dict=qualities_dict,
+                         option_buying_premium=option_buying_premium,
+                         sensex_option_buying_premium=sensex_option_buying_premium)
 
 @margin_bp.route('/qualities', methods=['GET', 'POST'])
 @login_required
@@ -230,6 +250,8 @@ def qualities():
                 quality.margin_percentage = float(quality_data.get('percentage', 50))
                 quality.risk_level = quality_data.get('risk_level', 'moderate')
                 quality.description = quality_data.get('description', '')
+                # Handle margin_source: 'available' for option sellers, 'cash' for option buyers
+                quality.margin_source = quality_data.get('margin_source', 'available')
 
             db.session.commit()
 
@@ -295,29 +317,41 @@ def calculator():
         for setting in settings:
             lot_sizes[setting.symbol] = setting.lot_size
 
+    # Get option buying premium from margin requirements
+    option_buying_premium = 20000  # Default value
+    margin_req = MarginRequirement.query.filter_by(
+        user_id=current_user.id,
+        instrument='NIFTY'
+    ).first()
+    if margin_req and margin_req.option_buying_premium:
+        option_buying_premium = margin_req.option_buying_premium
+
     return render_template('margin/calculator.html',
                          accounts=accounts,
                          qualities=qualities,
-                         lot_sizes=lot_sizes)
+                         lot_sizes=lot_sizes,
+                         option_buying_premium=option_buying_premium)
 
 @margin_bp.route('/calculate-lots', methods=['POST'])
 @login_required
 @api_rate_limit()
 def calculate_lots():
-    """API endpoint to calculate lot sizes"""
+    """API endpoint to calculate lot sizes for both option buying and selling"""
     try:
         data = request.get_json()
         available_margin = data.get('available_margin')
         instrument = data.get('instrument')
         trade_type = data.get('trade_type')
         quality_grade = data.get('quality_grade')
-        is_expiry = data.get('is_expiry', False)  # Default to non-expiry day
+        is_expiry = data.get('is_expiry', False)
+        margin_source = data.get('margin_source', 'available')  # 'available' or 'cash'
+        premium_per_lot = data.get('premium_per_lot')  # For option buying
 
         # Validate inputs
         if not available_margin or available_margin <= 0:
             return jsonify({
                 'status': 'error',
-                'message': 'Invalid available margin'
+                'message': 'Invalid margin amount'
             }), 400
 
         # Calculate lot size with provided margin
@@ -342,14 +376,54 @@ def calculate_lots():
 
         margin_percentage = quality.margin_percentage / 100
 
-        # Use calculate_lot_size_custom which supports is_expiry parameter
+        # Option Buying mode: Use premium_per_lot instead of margin requirements
+        if margin_source == 'cash' and trade_type == 'buy':
+            # If premium_per_lot not provided, get from database
+            if not premium_per_lot:
+                margin_req = calculator.margin_requirements.get(instrument)
+                if margin_req:
+                    if instrument == 'SENSEX':
+                        premium_per_lot = margin_req.sensex_option_buying_premium or 20000
+                    else:
+                        premium_per_lot = margin_req.option_buying_premium or 20000
+                else:
+                    premium_per_lot = 20000  # Default fallback
+
+            # Calculate: effective_margin / premium_per_lot
+            effective_margin = available_margin * margin_percentage
+            raw_lot_size = effective_margin / premium_per_lot
+            lot_size = int(raw_lot_size)
+
+            details = {
+                "available_margin": available_margin,
+                "margin_percentage": quality.margin_percentage,
+                "effective_margin": effective_margin,
+                "margin_per_lot": premium_per_lot,
+                "raw_lot_size": raw_lot_size,
+                "final_lot_size": lot_size,
+                "margin_required": lot_size * premium_per_lot,
+                "margin_remaining": available_margin - (lot_size * premium_per_lot),
+                "quality_grade": quality_grade,
+                "quality_percentage": quality.margin_percentage,
+                "is_expiry": is_expiry,
+                "calculation": f"Cash {available_margin:,.2f} x {quality.margin_percentage}% / {premium_per_lot:,.2f} = {raw_lot_size:.3f} = {lot_size} lots"
+            }
+
+            return jsonify({
+                'status': 'success',
+                'lot_size': lot_size,
+                'details': details
+            })
+
+        # Option Selling mode: Use margin requirements table
         lot_size, details = calculator.calculate_lot_size_custom(
             account=dummy_account,
             instrument=instrument,
             trade_type=trade_type,
             margin_percentage=margin_percentage,
             available_margin=available_margin,
-            is_expiry=is_expiry
+            is_expiry=is_expiry,
+            margin_source=margin_source
         )
 
         # Add quality_grade to details for display
@@ -578,6 +652,10 @@ def update_trade_quality(quality_grade):
         if 'risk_level' in data:
             quality.risk_level = data['risk_level']
 
+        if 'margin_source' in data:
+            # 'available' for option sellers, 'cash' for option buyers
+            quality.margin_source = data['margin_source']
+
         if 'description' in data:
             quality.description = data['description']
 
@@ -638,6 +716,79 @@ def delete_trade_quality(quality_grade):
     except Exception as e:
         db.session.rollback()
         logger.error(f"Error deleting trade quality: {e}")
+        return jsonify({
+            'status': 'error',
+            'message': str(e)
+        }), 400
+
+
+@margin_bp.route('/update-option-buying-premium', methods=['POST'])
+@login_required
+@api_rate_limit()
+def update_option_buying_premium():
+    """Update option buying premium per lot values"""
+    try:
+        data = request.get_json()
+        option_buying_premium = data.get('option_buying_premium')
+        sensex_option_buying_premium = data.get('sensex_option_buying_premium')
+
+        # Validate inputs
+        if option_buying_premium is None or float(option_buying_premium) < 0:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid NIFTY/BANKNIFTY premium value'
+            }), 400
+
+        if sensex_option_buying_premium is None or float(sensex_option_buying_premium) < 0:
+            return jsonify({
+                'status': 'error',
+                'message': 'Invalid SENSEX premium value'
+            }), 400
+
+        # Update NIFTY margin requirement
+        nifty_req = MarginRequirement.query.filter_by(
+            user_id=current_user.id,
+            instrument='NIFTY'
+        ).first()
+        if nifty_req:
+            nifty_req.option_buying_premium = float(option_buying_premium)
+        else:
+            MarginRequirement.get_or_create_defaults(current_user.id)
+            nifty_req = MarginRequirement.query.filter_by(
+                user_id=current_user.id,
+                instrument='NIFTY'
+            ).first()
+            if nifty_req:
+                nifty_req.option_buying_premium = float(option_buying_premium)
+
+        # Update BANKNIFTY margin requirement (same premium as NIFTY)
+        banknifty_req = MarginRequirement.query.filter_by(
+            user_id=current_user.id,
+            instrument='BANKNIFTY'
+        ).first()
+        if banknifty_req:
+            banknifty_req.option_buying_premium = float(option_buying_premium)
+
+        # Update SENSEX margin requirement
+        sensex_req = MarginRequirement.query.filter_by(
+            user_id=current_user.id,
+            instrument='SENSEX'
+        ).first()
+        if sensex_req:
+            sensex_req.sensex_option_buying_premium = float(sensex_option_buying_premium)
+
+        db.session.commit()
+
+        logger.info(f"Updated option buying premium for user {current_user.id}: NIFTY/BN={option_buying_premium}, SENSEX={sensex_option_buying_premium}")
+
+        return jsonify({
+            'status': 'success',
+            'message': 'Option buying premium saved successfully'
+        })
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error updating option buying premium: {e}")
         return jsonify({
             'status': 'error',
             'message': str(e)

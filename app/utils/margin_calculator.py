@@ -18,11 +18,37 @@ logger = logging.getLogger(__name__)
 class MarginCalculator:
     """Calculate lot sizes based on margin requirements and trade quality"""
 
+    # Default base margin per lot for option buying (premium budget allocation)
+    # This is used as fallback if database value is not available
+    DEFAULT_OPTION_BUYING_PREMIUM = 20000  # Rs 20,000 per lot
+
     def __init__(self, user_id: int):
         self.user_id = user_id
         self.margin_requirements = self._load_margin_requirements()
         self.trade_qualities = self._load_trade_qualities()
         self.trading_settings = self._load_trading_settings()
+
+    def get_option_buying_premium(self, instrument: str) -> float:
+        """
+        Get option buying premium per lot from database for the given instrument.
+
+        Args:
+            instrument: NIFTY, BANKNIFTY, or SENSEX
+
+        Returns:
+            Premium per lot (float)
+        """
+        margin_req = self.margin_requirements.get(instrument)
+        if margin_req:
+            if instrument == 'SENSEX':
+                premium = getattr(margin_req, 'sensex_option_buying_premium', None)
+            else:
+                premium = getattr(margin_req, 'option_buying_premium', None)
+
+            if premium is not None and premium > 0:
+                return float(premium)
+
+        return self.DEFAULT_OPTION_BUYING_PREMIUM
 
     def _load_margin_requirements(self) -> Dict:
         """Load user's margin requirements"""
@@ -254,7 +280,8 @@ class MarginCalculator:
                                   trade_type: str,
                                   margin_percentage: float,
                                   available_margin: Optional[float] = None,
-                                  is_expiry: Optional[bool] = None) -> Tuple[int, Dict]:
+                                  is_expiry: Optional[bool] = None,
+                                  margin_source: str = 'available') -> Tuple[int, Dict]:
         """
         Calculate optimal lot size with custom margin percentage (for risk profiles)
 
@@ -265,32 +292,40 @@ class MarginCalculator:
             margin_percentage: Percentage of margin to use (0.0 to 1.0, e.g., 0.65 for 65%)
             available_margin: Override available margin if provided
             is_expiry: Override expiry day detection (True=expiry, False=non-expiry, None=auto-detect)
+            margin_source: 'available' for option sellers (uses margin requirements),
+                          'cash' for option buyers (uses base margin of Rs 20,000/lot)
 
         Returns:
             Tuple of (lot_size, calculation_details)
         """
         try:
             logger.info(f"[LOT CALC DEBUG] Starting custom lot calculation for {account.account_name}")
-            logger.info(f"[LOT CALC DEBUG] Instrument: {instrument}, Trade Type: {trade_type}, Margin %: {margin_percentage*100}%")
+            logger.info(f"[LOT CALC DEBUG] Instrument: {instrument}, Trade Type: {trade_type}, Margin %: {margin_percentage*100}%, Source: {margin_source}")
 
             # Get available margin if not provided
             if available_margin is None:
                 # Check if it's a manual calculation (dummy account)
                 if hasattr(account, 'available_margin'):
                     available_margin = account.available_margin
-                    logger.info(f"[LOT CALC DEBUG] Using account.available_margin: ₹{available_margin:,.2f}")
+                    logger.info(f"[LOT CALC DEBUG] Using account.available_margin: {available_margin:,.2f}")
                 else:
                     available_margin = self.get_available_margin(account)
-                    logger.info(f"[LOT CALC DEBUG] Fetched available margin: ₹{available_margin:,.2f}")
+                    logger.info(f"[LOT CALC DEBUG] Fetched available margin: {available_margin:,.2f}")
             else:
-                logger.info(f"[LOT CALC DEBUG] Using provided available margin: ₹{available_margin:,.2f}")
+                logger.info(f"[LOT CALC DEBUG] Using provided available margin: {available_margin:,.2f}")
 
-            # Get margin requirement per lot (use is_expiry override if provided)
-            margin_per_lot = self.get_margin_requirement(instrument, trade_type, is_expiry=is_expiry)
-            logger.info(f"[LOT CALC DEBUG] Margin per lot: ₹{margin_per_lot:,.2f} (is_expiry={is_expiry})")
+            # Determine margin per lot based on margin_source
+            if margin_source == 'cash':
+                # Option Buyer mode: Get premium per lot from database
+                margin_per_lot = self.get_option_buying_premium(instrument)
+                logger.info(f"[LOT CALC DEBUG] Option Buyer mode: Using premium Rs {margin_per_lot:,}/lot from database")
+            else:
+                # Option Seller mode: Get margin requirement from table
+                margin_per_lot = self.get_margin_requirement(instrument, trade_type, is_expiry=is_expiry)
+                logger.info(f"[LOT CALC DEBUG] Option Seller mode: Margin per lot Rs {margin_per_lot:,.2f} (is_expiry={is_expiry})")
 
-            # Special case for option buying - no margin blocked
-            if margin_per_lot == 0:
+            # Special case: If margin requirement is 0 and NOT option buyer mode
+            if margin_per_lot == 0 and margin_source != 'cash':
                 details = {
                     "available_margin": available_margin,
                     "margin_percentage": margin_percentage * 100,
@@ -406,6 +441,126 @@ class MarginCalculator:
         except Exception as e:
             logger.error(f"[MARGIN DEBUG] Error fetching available margin: {e}", exc_info=True)
             return 0
+
+    def get_cash_margin(self, account: TradingAccount, force_refresh: bool = True) -> float:
+        """
+        Get CASH margin only (excludes collateral) for option buyers.
+
+        This is different from available margin which includes collateral.
+        Option buyers should use cash margin as their base for premium budget calculation.
+
+        Args:
+            account: Trading account object
+            force_refresh: If True, always fetch fresh data from API
+
+        Returns:
+            Cash margin amount (availablecash from API)
+        """
+        try:
+            logger.info(f"[CASH MARGIN] Getting cash margin for account: {account.account_name}")
+
+            # Fetch fresh funds data from API
+            client = ExtendedOpenAlgoAPI(
+                api_key=account.get_api_key(),
+                host=account.host_url
+            )
+
+            response = client.funds()
+
+            if response.get('status') == 'success':
+                funds_data = response.get('data', {})
+                # Get availablecash - this is pure cash without collateral
+                cash_margin = float(funds_data.get('availablecash', 0))
+                logger.info(f"[CASH MARGIN] Cash margin for {account.account_name}: {cash_margin:,.2f}")
+                return cash_margin
+            else:
+                logger.warning(f"[CASH MARGIN] API call failed, using cached data")
+                # Fallback to cached data
+                if account.last_funds_data:
+                    cash_margin = float(account.last_funds_data.get('availablecash', 0))
+                    logger.info(f"[CASH MARGIN] Using cached cash margin: {cash_margin:,.2f}")
+                    return cash_margin
+                return 0
+
+        except Exception as e:
+            logger.error(f"[CASH MARGIN] Error fetching cash margin: {e}", exc_info=True)
+            return 0
+
+    def calculate_option_buying_lots(self,
+                                     account: TradingAccount,
+                                     instrument: str,
+                                     quality_grade: str,
+                                     option_premium: float,
+                                     lot_size: int) -> Tuple[int, Dict]:
+        """
+        Calculate lot size for option buying based on cash margin.
+
+        Option buying uses a percentage of CASH margin (not available margin)
+        to calculate the premium budget, then divides by option premium.
+
+        Args:
+            account: Trading account object
+            instrument: NIFTY, BANKNIFTY, or SENSEX
+            quality_grade: Quality grade (must have margin_source='cash')
+            option_premium: Current premium of the option per unit
+            lot_size: Lot size for the instrument (e.g., 75 for NIFTY)
+
+        Returns:
+            Tuple of (number_of_lots, calculation_details)
+        """
+        try:
+            logger.info(f"[OPTION BUY] Calculating lots for {instrument} option buying")
+
+            # Get quality settings
+            quality = self.trade_qualities.get(quality_grade)
+            if not quality:
+                return 0, {"error": f"Invalid quality grade: {quality_grade}"}
+
+            # Verify this is a cash-based grade
+            margin_source = getattr(quality, 'margin_source', 'available')
+            if margin_source != 'cash':
+                logger.warning(f"[OPTION BUY] Grade {quality_grade} uses {margin_source} margin, not cash")
+
+            # Get cash margin
+            cash_margin = self.get_cash_margin(account)
+            if cash_margin <= 0:
+                return 0, {"error": "No cash margin available"}
+
+            # Calculate premium budget
+            margin_percentage = quality.margin_percentage / 100
+            premium_budget = cash_margin * margin_percentage
+
+            # Calculate premium per lot
+            premium_per_lot = option_premium * lot_size
+
+            if premium_per_lot <= 0:
+                return 0, {"error": "Invalid option premium"}
+
+            # Calculate number of lots
+            raw_lots = premium_budget / premium_per_lot
+            final_lots = int(raw_lots)
+
+            details = {
+                "cash_margin": cash_margin,
+                "quality_grade": quality_grade,
+                "margin_percentage": quality.margin_percentage,
+                "margin_source": margin_source,
+                "premium_budget": premium_budget,
+                "option_premium": option_premium,
+                "lot_size": lot_size,
+                "premium_per_lot": premium_per_lot,
+                "raw_lots": raw_lots,
+                "final_lots": final_lots,
+                "total_premium_required": final_lots * premium_per_lot,
+                "calculation": f"Cash {cash_margin:,.2f} x {quality.margin_percentage}% = {premium_budget:,.2f} budget / {premium_per_lot:,.2f} per lot = {final_lots} lots"
+            }
+
+            logger.info(f"[OPTION BUY] {account.account_name}: {details['calculation']}")
+            return final_lots, details
+
+        except Exception as e:
+            logger.error(f"[OPTION BUY] Error calculating option buying lots: {e}", exc_info=True)
+            return 0, {"error": str(e)}
 
     def calculate_multi_trade_lots(self,
                                   account: TradingAccount,

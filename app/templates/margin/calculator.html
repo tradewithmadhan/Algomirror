@@ -14,19 +14,42 @@
         <h1 class="text-3xl font-bold">Lot Size Calculator</h1>
     </div>
 
+    <!-- Mode Selection Tabs -->
+    <div class="tabs tabs-boxed bg-base-200 mb-6 p-1">
+        <a class="tab tab-lg flex-1 tab-active" id="tab-selling" onclick="switchMode('selling')">
+            Option Selling
+        </a>
+        <a class="tab tab-lg flex-1" id="tab-buying" onclick="switchMode('buying')">
+            Option Buying
+        </a>
+    </div>
+
     <!-- Calculator Card -->
     <div class="card bg-base-100 shadow-xl">
         <div class="card-body">
-            <h2 class="card-title mb-4">Calculate Optimal Lot Size</h2>
+            <!-- Mode-specific header -->
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="card-title" id="calculator-title">Option Selling Calculator</h2>
+                <span class="badge badge-lg" id="mode-badge">Uses Margin Table</span>
+            </div>
+
+            <!-- Mode Description -->
+            <div class="alert mb-4" id="mode-description">
+                <div>
+                    <p class="text-sm" id="mode-description-text">
+                        Option Selling uses your <strong>Available Margin</strong> (Cash + Collateral) and margin requirements from the margin table.
+                    </p>
+                </div>
+            </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <!-- Input Section -->
                 <div class="space-y-4">
-                    <!-- Available Margin (Manual Input) -->
+                    <!-- Margin Input (label changes based on mode) -->
                     <div class="form-control">
                         <label class="label">
-                            <span class="label-text font-semibold">Available Margin</span>
-                            <span class="label-text-alt">Enter your available margin</span>
+                            <span class="label-text font-semibold" id="margin-label">Available Margin (Cash + Collateral)</span>
+                            <span class="label-text-alt" id="margin-hint">For option selling</span>
                         </label>
                         <div class="input-group">
                             <span class="px-3 bg-base-200 flex items-center">₹</span>
@@ -39,7 +62,7 @@
                                    step="1000" />
                         </div>
                         <label class="label">
-                            <span class="label-text-alt text-info">Default: ₹12,45,000 - You can modify this value</span>
+                            <span class="label-text-alt text-info" id="margin-example">Example: ₹12,45,000</span>
                         </label>
                     </div>
 
@@ -56,35 +79,56 @@
                         </select>
                     </div>
 
-                    <!-- Trade Type -->
-                    <div class="form-control">
+                    <!-- Trade Type (Option Selling) -->
+                    <div class="form-control" id="selling-trade-type-group">
                         <label class="label">
                             <span class="label-text font-semibold">Trade Type</span>
                         </label>
                         <select id="trade-type-select" class="select select-bordered w-full" onchange="updateDisplay()">
                             <option value="sell_c_p">Sell CE / PE</option>
                             <option value="sell_c_and_p">Sell CE and PE</option>
-                            <option value="buy">Option Buying</option>
                             <option value="futures">Futures</option>
                         </select>
+                    </div>
+
+                    <!-- Premium Per Lot (Option Buying - hidden by default) -->
+                    <div class="form-control" id="buying-premium-group" style="display: none;">
+                        <label class="label">
+                            <span class="label-text font-semibold">Premium Per Lot</span>
+                            <span class="label-text-alt">Premium budget allocation per lot</span>
+                        </label>
+                        <div class="input-group">
+                            <span class="px-3 bg-base-200 flex items-center">₹</span>
+                            <input type="number"
+                                   id="premium-per-lot"
+                                   class="input input-bordered w-full"
+                                   placeholder="20000"
+                                   value="{{ option_buying_premium | default(20000) }}"
+                                   onchange="updateDisplay()"
+                                   step="1000" />
+                        </div>
+                        <label class="label">
+                            <span class="label-text-alt text-info">Default: Rs 20,000 - Adjust based on your premium budget</span>
+                        </label>
                     </div>
 
                     <!-- Trade Quality -->
                     <div class="form-control">
                         <label class="label">
-                            <span class="label-text font-semibold">Trade Quality</span>
+                            <span class="label-text font-semibold">Trade Quality (% of Margin)</span>
                         </label>
                         <select id="quality-select" class="select select-bordered w-full" onchange="updateDisplay()">
                             {% for quality in qualities %}
-                                <option value="{{ quality.quality_grade }}">
+                                <option value="{{ quality.quality_grade }}"
+                                        data-margin-source="{{ quality.margin_source | default('available') }}">
                                     Grade {{ quality.quality_grade }} - {{ quality.risk_level|title }} ({{ quality.margin_percentage }}%)
                                 </option>
                             {% endfor %}
                         </select>
                     </div>
 
-                    <!-- Expiry Day Selection -->
-                    <div class="form-control">
+                    <!-- Expiry Day Selection (Option Selling only) -->
+                    <div class="form-control" id="expiry-group">
                         <label class="label">
                             <span class="label-text font-semibold">Day Type</span>
                             <span class="label-text-alt">Margin varies by day type</span>
@@ -166,20 +210,33 @@
                         Formula: Available × Quality% / Margin per Lot
                     </div>
 
-                    <!-- Option Buying Note -->
+                    <!-- Option Buying Note (shown in buying mode) -->
                     <div class="alert alert-success mt-4" id="option-buying-note" style="display: none;">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-current shrink-0 w-6 h-6"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span>Option Buying doesn't block any margin. Only the premium amount is debited from your account. Lots are not limited by margin.</span>
+                        <div>
+                            <p class="font-semibold">Option Buying Calculation</p>
+                            <p class="text-sm mt-1">Lots = (Cash Margin x Quality %) / Premium Per Lot</p>
+                            <p class="text-xs mt-1 opacity-70">Premium budget is allocated from cash margin only (excludes collateral)</p>
+                        </div>
+                    </div>
+
+                    <!-- Option Selling Note (shown in selling mode) -->
+                    <div class="alert alert-info mt-4" id="option-selling-note">
+                        <div>
+                            <p class="font-semibold">Option Selling Calculation</p>
+                            <p class="text-sm mt-1">Lots = (Available Margin x Quality %) / Margin Per Lot</p>
+                            <p class="text-xs mt-1 opacity-70">Margin per lot is based on the margin requirements table</p>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Example Scenarios -->
-    <div class="card bg-base-100 shadow-xl mt-6">
+    <!-- Example Scenarios - Option Selling -->
+    <div class="card bg-base-100 shadow-xl mt-6" id="examples-selling">
         <div class="card-body">
-            <h2 class="card-title mb-4">Example Scenarios</h2>
+            <h2 class="card-title mb-4">Option Selling Examples</h2>
+            <p class="text-sm text-base-content/70 mb-4">Uses Available Margin (Cash + Collateral) and margin requirements from the table.</p>
 
             <div class="overflow-x-auto">
                 <table class="table table-zebra">
@@ -199,7 +256,7 @@
                             <td>NIFTY</td>
                             <td>Sell CE & PE</td>
                             <td>A (95%)</td>
-                            <td>12,45,000 × 0.95 / 3,20,000</td>
+                            <td>12,45,000 x 95% / 3,20,000</td>
                             <td><span class="badge badge-success">3 Lots</span></td>
                         </tr>
                         <tr>
@@ -207,7 +264,7 @@
                             <td>BANKNIFTY</td>
                             <td>Sell CE/PE</td>
                             <td>B (65%)</td>
-                            <td>8,00,000 × 0.65 / 2,50,000</td>
+                            <td>8,00,000 x 65% / 2,50,000</td>
                             <td><span class="badge badge-warning">2 Lots</span></td>
                         </tr>
                         <tr>
@@ -215,16 +272,65 @@
                             <td>SENSEX</td>
                             <td>Futures</td>
                             <td>C (36%)</td>
-                            <td>5,00,000 × 0.36 / 1,85,000</td>
+                            <td>5,00,000 x 36% / 1,85,000</td>
+                            <td><span class="badge badge-error">0 Lots</span></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Example Scenarios - Option Buying -->
+    <div class="card bg-base-100 shadow-xl mt-6" id="examples-buying" style="display: none;">
+        <div class="card-body">
+            <h2 class="card-title mb-4">Option Buying Examples</h2>
+            <p class="text-sm text-base-content/70 mb-4">Uses Cash Margin only (excludes collateral) with premium per lot (default Rs 20,000).</p>
+
+            <div class="overflow-x-auto">
+                <table class="table table-zebra">
+                    <thead>
+                        <tr>
+                            <th>Cash Margin</th>
+                            <th>Instrument</th>
+                            <th>Quality</th>
+                            <th>Premium/Lot</th>
+                            <th>Calculation</th>
+                            <th>Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>₹10,00,000</td>
+                            <td>NIFTY</td>
+                            <td>5%</td>
+                            <td>₹20,000</td>
+                            <td>10,00,000 x 5% / 20,000</td>
+                            <td><span class="badge badge-success">2 Lots</span></td>
+                        </tr>
+                        <tr>
+                            <td>₹5,00,000</td>
+                            <td>BANKNIFTY</td>
+                            <td>10%</td>
+                            <td>₹20,000</td>
+                            <td>5,00,000 x 10% / 20,000</td>
+                            <td><span class="badge badge-success">2 Lots</span></td>
+                        </tr>
+                        <tr>
+                            <td>₹3,00,000</td>
+                            <td>NIFTY</td>
+                            <td>5%</td>
+                            <td>₹20,000</td>
+                            <td>3,00,000 x 5% / 20,000</td>
                             <td><span class="badge badge-error">0 Lots</span></td>
                         </tr>
                         <tr>
-                            <td>₹2,00,000</td>
-                            <td>NIFTY</td>
-                            <td>Option Buying</td>
-                            <td>A (95%)</td>
-                            <td>No margin blocked</td>
-                            <td><span class="badge badge-info">N/A</span></td>
+                            <td>₹8,00,000</td>
+                            <td>SENSEX</td>
+                            <td>15%</td>
+                            <td>₹20,000</td>
+                            <td>8,00,000 x 15% / 20,000</td>
+                            <td><span class="badge badge-success">6 Lots</span></td>
                         </tr>
                     </tbody>
                 </table>
@@ -251,39 +357,131 @@
 </div>
 
 <script>
+    // Current mode: 'selling' or 'buying'
+    let currentMode = 'selling';
+
+    function switchMode(mode) {
+        currentMode = mode;
+
+        // Update tabs
+        document.getElementById('tab-selling').classList.toggle('tab-active', mode === 'selling');
+        document.getElementById('tab-buying').classList.toggle('tab-active', mode === 'buying');
+
+        // Update calculator title and badge
+        if (mode === 'buying') {
+            document.getElementById('calculator-title').textContent = 'Option Buying Calculator';
+            document.getElementById('mode-badge').textContent = 'Uses Premium Per Lot';
+            document.getElementById('mode-badge').className = 'badge badge-lg badge-success';
+            document.getElementById('mode-description-text').innerHTML =
+                'Option Buying uses your <strong>Cash Margin only</strong> (excludes collateral) and premium per lot to calculate lot size.';
+            document.getElementById('mode-description').className = 'alert alert-success mb-4';
+
+            // Update margin input label
+            document.getElementById('margin-label').textContent = 'Cash Margin (Excludes Collateral)';
+            document.getElementById('margin-hint').textContent = 'For option buying';
+            document.getElementById('margin-example').textContent = 'Example: ₹10,00,000 (Cash only)';
+
+            // Show/hide form groups
+            document.getElementById('selling-trade-type-group').style.display = 'none';
+            document.getElementById('buying-premium-group').style.display = 'block';
+            document.getElementById('expiry-group').style.display = 'none';
+
+            // Update formula display
+            document.getElementById('formula-display').textContent = 'Formula: Cash Margin x Quality% / Premium per Lot';
+
+            // Show/hide notes
+            document.getElementById('option-buying-note').style.display = 'flex';
+            document.getElementById('option-selling-note').style.display = 'none';
+
+            // Show/hide examples
+            document.getElementById('examples-selling').style.display = 'none';
+            document.getElementById('examples-buying').style.display = 'block';
+        } else {
+            document.getElementById('calculator-title').textContent = 'Option Selling Calculator';
+            document.getElementById('mode-badge').textContent = 'Uses Margin Table';
+            document.getElementById('mode-badge').className = 'badge badge-lg badge-info';
+            document.getElementById('mode-description-text').innerHTML =
+                'Option Selling uses your <strong>Available Margin</strong> (Cash + Collateral) and margin requirements from the margin table.';
+            document.getElementById('mode-description').className = 'alert alert-info mb-4';
+
+            // Update margin input label
+            document.getElementById('margin-label').textContent = 'Available Margin (Cash + Collateral)';
+            document.getElementById('margin-hint').textContent = 'For option selling';
+            document.getElementById('margin-example').textContent = 'Example: ₹12,45,000';
+
+            // Show/hide form groups
+            document.getElementById('selling-trade-type-group').style.display = 'block';
+            document.getElementById('buying-premium-group').style.display = 'none';
+            document.getElementById('expiry-group').style.display = 'block';
+
+            // Update formula display
+            document.getElementById('formula-display').textContent = 'Formula: Available Margin x Quality% / Margin per Lot';
+
+            // Show/hide notes
+            document.getElementById('option-buying-note').style.display = 'none';
+            document.getElementById('option-selling-note').style.display = 'flex';
+
+            // Show/hide examples
+            document.getElementById('examples-selling').style.display = 'block';
+            document.getElementById('examples-buying').style.display = 'none';
+        }
+    }
+
     async function calculateLotSize() {
         const availableMargin = parseFloat(document.getElementById('available-margin').value);
         const instrument = document.getElementById('instrument-select').value;
-        const tradeType = document.getElementById('trade-type-select').value;
         const qualityGrade = document.getElementById('quality-select').value;
-        const expirySelect = document.getElementById('expiry-select').value;
-        const isExpiry = expirySelect === 'expiry';
 
         if (!availableMargin || availableMargin <= 0) {
-            alert('Please enter a valid available margin amount');
+            alert('Please enter a valid margin amount');
             return;
         }
 
         try {
+            let requestBody;
+
+            if (currentMode === 'buying') {
+                // Option Buying mode
+                const premiumPerLot = parseFloat(document.getElementById('premium-per-lot').value) || 20000;
+
+                requestBody = {
+                    available_margin: availableMargin,
+                    instrument: instrument,
+                    trade_type: 'buy',
+                    quality_grade: qualityGrade,
+                    is_expiry: false,
+                    margin_source: 'cash',
+                    premium_per_lot: premiumPerLot
+                };
+            } else {
+                // Option Selling mode
+                const tradeType = document.getElementById('trade-type-select').value;
+                const expirySelect = document.getElementById('expiry-select').value;
+                const isExpiry = expirySelect === 'expiry';
+
+                requestBody = {
+                    available_margin: availableMargin,
+                    instrument: instrument,
+                    trade_type: tradeType,
+                    quality_grade: qualityGrade,
+                    is_expiry: isExpiry,
+                    margin_source: 'available'
+                };
+            }
+
             const response = await fetch('/margin/calculate-lots', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
                 },
-                body: JSON.stringify({
-                    available_margin: availableMargin,
-                    instrument: instrument,
-                    trade_type: tradeType,
-                    quality_grade: qualityGrade,
-                    is_expiry: isExpiry
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();
 
             if (data.status === 'success') {
-                displayResults(data.lot_size, data.details, isExpiry);
+                displayResults(data.lot_size, data.details);
             } else {
                 alert('Error: ' + (data.message || 'Calculation failed'));
             }
@@ -293,15 +491,32 @@
         }
     }
 
-    function displayResults(lotSize, details, isExpiry) {
+    function displayResults(lotSize, details) {
         // Update main result
         document.getElementById('lot-size-result').textContent = lotSize + ' Lots';
 
         // Update calculation details
+        const marginLabel = currentMode === 'buying' ? 'Cash Margin' : 'Available Margin';
         document.getElementById('detail-available').textContent = '₹ ' + formatNumber(details.available_margin);
-        document.getElementById('detail-quality').textContent = details.quality_grade;
-        document.getElementById('detail-percentage').textContent = details.quality_percentage + '%';
-        document.getElementById('detail-day-type').textContent = isExpiry ? 'Expiry Day' : 'Non-Expiry Day';
+
+        // Update quality display
+        if (details.quality_grade) {
+            document.getElementById('detail-quality').textContent = details.quality_grade;
+        } else {
+            document.getElementById('detail-quality').textContent = '-';
+        }
+
+        // Use margin_percentage if quality_percentage is not available
+        const percentage = details.quality_percentage || details.margin_percentage;
+        document.getElementById('detail-percentage').textContent = percentage + '%';
+
+        // Day type only relevant for option selling
+        if (currentMode === 'selling') {
+            document.getElementById('detail-day-type').textContent = details.is_expiry ? 'Expiry Day' : 'Non-Expiry Day';
+        } else {
+            document.getElementById('detail-day-type').textContent = 'N/A (Option Buying)';
+        }
+
         document.getElementById('detail-effective').textContent = '₹ ' + formatNumber(details.effective_margin);
         document.getElementById('detail-per-lot').textContent = '₹ ' + formatNumber(details.margin_per_lot);
         document.getElementById('detail-max-lots').textContent = details.raw_lot_size.toFixed(3) + ' (floor: ' + lotSize + ')';
@@ -334,25 +549,13 @@
     }
 
     function updateDisplay() {
-        // Show/hide option buying note based on trade type
-        const tradeType = document.getElementById('trade-type-select').value;
-        const instrument = document.getElementById('instrument-select').value;
-        const optionBuyingNote = document.getElementById('option-buying-note');
-
-        if (tradeType === 'buy') {
-            optionBuyingNote.style.display = 'flex';
-        } else {
-            optionBuyingNote.style.display = 'none';
-        }
+        // Called when inputs change - can be used for real-time updates if needed
     }
 
-    // Initialize with formatted default value
+    // Initialize
     document.addEventListener('DOMContentLoaded', function() {
-        const marginInput = document.getElementById('available-margin');
-        if (marginInput && marginInput.value) {
-            // Format the display value
-            updateDisplay();
-        }
+        // Initialize with selling mode
+        switchMode('selling');
     });
 </script>
 {% endblock %}
