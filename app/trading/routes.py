@@ -1465,7 +1465,11 @@ def get_risk_status():
                 'supertrend_exit_triggered': strategy.supertrend_exit_triggered,
                 'supertrend_exit_reason': strategy.supertrend_exit_reason,
                 'supertrend_exit_triggered_at': strategy.supertrend_exit_triggered_at.isoformat() if strategy.supertrend_exit_triggered_at else None,
-                # Trailing SL exit tracking
+                # Trailing SL exit tracking (AFL-style ratcheting)
+                'trailing_sl_active': strategy.trailing_sl_active,
+                'trailing_sl_peak_pnl': strategy.trailing_sl_peak_pnl,
+                'trailing_sl_initial_stop': strategy.trailing_sl_initial_stop,
+                'trailing_sl_current_stop': strategy.trailing_sl_trigger_pnl,
                 'trailing_sl_triggered_at': strategy.trailing_sl_triggered_at.isoformat() if strategy.trailing_sl_triggered_at else None,
                 'trailing_sl_exit_reason': strategy.trailing_sl_exit_reason,
                 # Max Loss exit tracking
@@ -2056,7 +2060,11 @@ def risk_status_stream():
                             'supertrend_exit_triggered': strategy.supertrend_exit_triggered,
                             'supertrend_exit_reason': strategy.supertrend_exit_reason,
                             'supertrend_exit_triggered_at': strategy.supertrend_exit_triggered_at.isoformat() if strategy.supertrend_exit_triggered_at else None,
-                            # Trailing SL exit tracking
+                            # Trailing SL exit tracking (AFL-style ratcheting)
+                            'trailing_sl_active': strategy.trailing_sl_active,
+                            'trailing_sl_peak_pnl': strategy.trailing_sl_peak_pnl,
+                            'trailing_sl_initial_stop': strategy.trailing_sl_initial_stop,
+                            'trailing_sl_current_stop': strategy.trailing_sl_trigger_pnl,
                             'trailing_sl_triggered_at': strategy.trailing_sl_triggered_at.isoformat() if strategy.trailing_sl_triggered_at else None,
                             'trailing_sl_exit_reason': strategy.trailing_sl_exit_reason,
                             # Max Loss exit tracking

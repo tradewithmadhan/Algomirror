@@ -278,10 +278,14 @@ class Strategy(db.Model):
     auto_exit_on_max_profit = db.Column(db.Boolean, default=True)
     trailing_sl_type = db.Column(db.String(20), default='percentage')  # 'percentage', 'points', 'amount'
 
-    # Trailing SL tracking state
+    # Trailing SL tracking state (AFL-style ratcheting stop)
+    # Logic: stop_level = peak_pnl * (1 - trailing_pct/100)
+    # Stop only moves UP (ratchets), never down
+    # Exit when current_pnl < trailing_stop
     trailing_sl_active = db.Column(db.Boolean, default=False)  # Is TSL currently tracking
-    trailing_sl_peak_pnl = db.Column(db.Float, default=0.0)  # Highest P&L reached (for trailing calculation)
-    trailing_sl_trigger_pnl = db.Column(db.Float)  # Current trigger level (exit if P&L drops below this)
+    trailing_sl_peak_pnl = db.Column(db.Float, default=0.0)  # Highest P&L reached (like "High" in AFL)
+    trailing_sl_initial_stop = db.Column(db.Float)  # First stop level when TSL activated
+    trailing_sl_trigger_pnl = db.Column(db.Float)  # Current trailing stop (ratchets up, like trailARRAY in AFL)
     trailing_sl_triggered_at = db.Column(db.DateTime)  # When TSL was triggered (if ever)
     trailing_sl_exit_reason = db.Column(db.String(200))  # Stores TSL exit reason
 

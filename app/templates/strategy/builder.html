@@ -658,7 +658,7 @@
                         </div>
                         {% endif %}
 
-                        <!-- Trailing SL -->
+                        <!-- Trailing SL (AFL-style ratcheting) -->
                         {% if strategy.trailing_sl %}
                         <div class="bg-base-100 rounded-lg p-3" id="riskTrailingSLCard">
                             <div class="flex justify-between text-sm mb-2">
@@ -677,13 +677,21 @@
                                 </span>
                             </div>
                             {% if not strategy.trailing_sl_triggered_at %}
-                            <div class="text-xs mt-2">
-                                <span class="text-base-content/60">Peak P&L:</span>
-                                <span id="riskTrailingSLPeak">₹{{ strategy.trailing_sl_peak_pnl|default(0, true)|round(2) }}</span>
+                            <!-- TSL Tracking Display (AFL-style) -->
+                            <div class="grid grid-cols-2 gap-2 text-xs mt-2">
+                                <div>
+                                    <span class="text-base-content/60">Peak P&L:</span>
+                                    <span class="font-mono text-success" id="riskTrailingSLPeak">₹{{ (strategy.trailing_sl_peak_pnl or 0)|round(2) }}</span>
+                                </div>
+                                <div>
+                                    <span class="text-base-content/60">Initial Stop:</span>
+                                    <span class="font-mono text-warning" id="riskTrailingSLInitial">{% if strategy.trailing_sl_initial_stop %}₹{{ strategy.trailing_sl_initial_stop|round(2) }}{% else %}--{% endif %}</span>
+                                </div>
                             </div>
                             <div class="text-xs mt-1">
-                                <span class="text-base-content/60">Trigger at:</span>
-                                <span id="riskTrailingSLTrigger">₹{{ strategy.trailing_sl_trigger_pnl|default('--', true) }}</span>
+                                <span class="text-base-content/60">Current Stop:</span>
+                                <span class="font-mono text-error font-bold" id="riskTrailingSLTrigger">{% if strategy.trailing_sl_trigger_pnl %}₹{{ strategy.trailing_sl_trigger_pnl|round(2) }}{% else %}--{% endif %}</span>
+                                <span class="text-base-content/40 text-[10px]">(ratchets up)</span>
                             </div>
                             {% endif %}
                             {% if strategy.trailing_sl_triggered_at and strategy.trailing_sl_exit_reason %}
@@ -2599,13 +2607,13 @@ function updateRiskStatusDisplay(data) {
         }
     }
 
-    // Update Trailing SL exit status and reason
+    // Update Trailing SL status and values (AFL-style ratcheting)
     const tslStatusEl = document.getElementById('riskTrailingSLStatus');
     if (tslStatusEl && strategyData.trailing_sl) {
         if (strategyData.trailing_sl_triggered_at) {
             tslStatusEl.textContent = 'Triggered';
             tslStatusEl.className = 'badge badge-error badge-sm ml-1';
-        } else if (strategyData.total_pnl > 0) {
+        } else if (strategyData.trailing_sl_active) {
             tslStatusEl.textContent = 'Active';
             tslStatusEl.className = 'badge badge-warning badge-sm ml-1';
         } else {
@@ -2613,7 +2621,25 @@ function updateRiskStatusDisplay(data) {
             tslStatusEl.className = 'badge badge-ghost badge-sm ml-1';
         }
     }
-    // Create Trailing SL exit reason display
+
+    // Update TSL tracking values (peak, initial, current stop)
+    if (strategyData.trailing_sl && !strategyData.trailing_sl_triggered_at) {
+        const peakEl = document.getElementById('riskTrailingSLPeak');
+        const initialEl = document.getElementById('riskTrailingSLInitial');
+        const triggerEl = document.getElementById('riskTrailingSLTrigger');
+
+        if (peakEl && strategyData.trailing_sl_peak_pnl !== undefined) {
+            peakEl.textContent = `₹${(strategyData.trailing_sl_peak_pnl || 0).toFixed(2)}`;
+        }
+        if (initialEl && strategyData.trailing_sl_initial_stop !== undefined) {
+            initialEl.textContent = strategyData.trailing_sl_initial_stop ? `₹${strategyData.trailing_sl_initial_stop.toFixed(2)}` : '--';
+        }
+        if (triggerEl && strategyData.trailing_sl_current_stop !== undefined) {
+            triggerEl.textContent = strategyData.trailing_sl_current_stop ? `₹${strategyData.trailing_sl_current_stop.toFixed(2)}` : '--';
+        }
+    }
+
+    // Create Trailing SL exit reason display when triggered
     const riskTrailingSLCard = document.getElementById('riskTrailingSLCard');
     if (riskTrailingSLCard && strategyData.trailing_sl_triggered_at && strategyData.trailing_sl_exit_reason) {
         if (!document.getElementById('riskTrailingSLReason')) {

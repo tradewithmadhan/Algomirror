@@ -262,10 +262,24 @@ class RiskManager:
         """
         Check if trailing stop loss should be triggered based on COMBINED strategy P&L.
 
+        AFL-style ratcheting trailing stop logic:
+        =========================================
+        StopLevel = 1 - trailing_pct/100  (e.g., 30% = 0.70)
+
+        When P&L first goes positive:
+          - initial_stop = peak_pnl * StopLevel
+          - trailing_stop = initial_stop
+
+        On each update:
+          - new_stop = peak_pnl * StopLevel
+          - trailing_stop = Max(new_stop, trailing_stop)  // Ratchet UP only!
+
+        Exit when: current_pnl < trailing_stop
+
         TSL State Machine:
         1. Waiting: P&L <= 0, TSL not yet activated
-        2. Active: P&L became positive, now tracking peak and calculating trigger
-        3. Triggered: P&L dropped below trigger level, exit all positions
+        2. Active: P&L became positive, now tracking peak and ratcheting stop UP
+        3. Triggered: P&L dropped below trailing stop level, exit all positions
 
         Once Active, TSL stays active until exit (doesn't go back to Waiting).
 
@@ -291,6 +305,7 @@ class RiskManager:
                 if strategy.trailing_sl_active:
                     strategy.trailing_sl_active = False
                     strategy.trailing_sl_peak_pnl = 0.0
+                    strategy.trailing_sl_initial_stop = None
                     strategy.trailing_sl_trigger_pnl = None
                     db.session.commit()
                 return None
@@ -306,39 +321,57 @@ class RiskManager:
             # Check if TSL was previously activated (persisted state)
             was_active = strategy.trailing_sl_active or False
             current_peak = strategy.trailing_sl_peak_pnl or 0.0
+            current_trailing_stop = strategy.trailing_sl_trigger_pnl or 0.0
 
             # TSL activates when P&L becomes positive (first time)
             # Once active, it STAYS active until exit or positions closed
             if current_pnl > 0 or was_active:
                 strategy.trailing_sl_active = True
 
-                # Update peak P&L only if current is higher (ratchet effect)
+                # Update peak P&L only if current is higher
                 if current_pnl > current_peak:
                     strategy.trailing_sl_peak_pnl = current_pnl
                     current_peak = current_pnl
-                    logger.debug(f"[TSL] Strategy {strategy.name}: New peak P&L = {current_peak}")
+                    logger.debug(f"[TSL] Strategy {strategy.name}: New peak P&L = {current_peak:.2f}")
 
-                # Calculate trigger level based on trailing SL type and peak PnL
+                # Calculate new stop level based on current peak
+                # AFL: stoplevel = 1 - trailing_pct/100
+                # AFL: new_stop = High * stoplevel (where High = peak_pnl in our case)
                 if trailing_type == 'percentage':
-                    trigger_pnl = current_peak * (1 - trailing_value / 100)
+                    stop_level = 1 - (trailing_value / 100)
+                    new_stop = current_peak * stop_level
                 elif trailing_type == 'points':
-                    trigger_pnl = current_peak - trailing_value
+                    new_stop = current_peak - trailing_value
                 else:  # 'amount'
-                    trigger_pnl = current_peak - trailing_value
+                    new_stop = current_peak - trailing_value
 
-                strategy.trailing_sl_trigger_pnl = trigger_pnl
+                # AFL: trailstop = Max(new_stop, trailstop) - RATCHET UP ONLY!
+                # The trailing stop can only move UP, never down
+                if new_stop > current_trailing_stop:
+                    trailing_stop = new_stop
+                    logger.debug(f"[TSL] Strategy {strategy.name}: Trailing stop ratcheted UP to {trailing_stop:.2f}")
+                else:
+                    trailing_stop = current_trailing_stop
+
+                # Set initial stop if this is the first activation
+                if strategy.trailing_sl_initial_stop is None:
+                    strategy.trailing_sl_initial_stop = trailing_stop
+                    logger.info(f"[TSL] Strategy {strategy.name}: Initial stop set at {trailing_stop:.2f}")
+
+                strategy.trailing_sl_trigger_pnl = trailing_stop
                 db.session.commit()
 
-                # Check if TSL should trigger (P&L dropped below trigger)
+                # AFL: Exit when Low < trailstop (where Low = current_pnl in our case)
                 # Only trigger if we have a valid peak (TSL was truly active)
-                if current_peak > 0 and current_pnl <= trigger_pnl and not strategy.trailing_sl_triggered_at:
+                if current_peak > 0 and current_pnl <= trailing_stop and not strategy.trailing_sl_triggered_at:
+                    initial_stop = strategy.trailing_sl_initial_stop or trailing_stop
                     logger.warning(
                         f"[TSL] Trailing SL triggered for {strategy.name}: "
-                        f"P&L={current_pnl}, Trigger={trigger_pnl}, Peak={current_peak}"
+                        f"P&L={current_pnl:.2f}, Stop={trailing_stop:.2f}, Peak={current_peak:.2f}, Initial={initial_stop:.2f}"
                     )
 
                     # Store exit reason and timestamp
-                    exit_reason = f"TSL: P&L {current_pnl:.2f} dropped below {trigger_pnl:.2f} (Peak: {current_peak:.2f})"
+                    exit_reason = f"TSL: P&L {current_pnl:.2f} < Stop {trailing_stop:.2f} (Peak: {current_peak:.2f}, Initial: {initial_stop:.2f})"
                     strategy.trailing_sl_triggered_at = datetime.utcnow()
                     strategy.trailing_sl_exit_reason = exit_reason
                     db.session.commit()
@@ -347,7 +380,7 @@ class RiskManager:
                     risk_event = RiskEvent(
                         strategy_id=strategy.id,
                         event_type='trailing_sl',
-                        threshold_value=trigger_pnl,
+                        threshold_value=trailing_stop,
                         current_value=current_pnl,
                         action_taken='close_all',
                         notes=exit_reason
