@@ -7,14 +7,14 @@
 
 > **Enterprise-grade multi-account management platform for OpenAlgo with strategy building, risk management, and real-time analytics**
 
-AlgoMirror is a proprietary, secure, and scalable multi-account management platform. It provides traders with a unified interface to manage multiple OpenAlgo trading accounts across 25+ brokers, featuring advanced strategy building, Supertrend-based exits, dynamic margin calculation, and comprehensive risk management.
+AlgoMirror is a secure and scalable multi-account management platform. It provides traders with a unified interface to manage multiple OpenAlgo trading accounts across 25+ brokers, featuring advanced strategy building, Supertrend-based exits, dynamic margin calculation, and comprehensive risk management.
 
 ---
 
 ## Table of Contents
 
 - [Key Features](#key-features)
-- [What's New in v2.0](#whats-new-in-v20)
+- [What's New in v1.0](#whats-new-in-v20)
 - [Prerequisites](#prerequisites)
 - [Quick Start Guide](#quick-start-guide)
 - [Strategy Builder](#strategy-builder)
@@ -73,7 +73,7 @@ AlgoMirror is a proprietary, secure, and scalable multi-account management platf
 
 ---
 
-## What's New in v2.0
+## What's New in v1.0
 
 ### Strategy Builder
 - Complete visual strategy builder with multi-leg support
@@ -109,27 +109,12 @@ AlgoMirror is a proprietary, secure, and scalable multi-account management platf
 
 | Requirement | Version | Purpose |
 |-------------|---------|---------|
-| Python | 3.9+ | Core runtime |
-| Node.js | 14+ | CSS build system (Tailwind) |
+| Python | 3.12+ | Core runtime |
+| Node.js | 16+ | CSS build system (Tailwind) |
 | OpenAlgo | Latest | Trading platform integration |
 | SQLite | Built-in | Development database |
-| PostgreSQL | 12+ | Production database (recommended) |
-| Redis | 6+ | Session storage & rate limiting (optional) |
 | TA-Lib | Latest | Technical analysis library |
 
-### Installing TA-Lib
-
-**Windows:**
-Download pre-built binaries from [TA-Lib Windows](https://github.com/cgohlke/talib-build/releases)
-
-**Linux/macOS:**
-```bash
-# Ubuntu/Debian
-sudo apt-get install ta-lib
-
-# macOS
-brew install ta-lib
-```
 
 ---
 
@@ -180,7 +165,7 @@ python app.py
 
 ```bash
 # Clone repository
-git clone https://github.com/openflare/algomirror.git
+git clone https://github.com/marketcalls/algomirror.git
 cd algomirror
 
 # Create and activate virtual environment
@@ -400,7 +385,7 @@ The Supertrend Exit Service runs as a daemon thread:
 
 ## OpenAlgo Integration
 
-### Supported Brokers (24)
+### Supported Brokers (25)
 
 - 5paisa & 5paisa (XTS)
 - Aliceblue
@@ -420,6 +405,7 @@ The Supertrend Exit Service runs as a daemon thread:
 - Paytm
 - Pocketful
 - Shoonya
+- Samco
 - Tradejini
 - Upstox
 - Wisdom Capital (XTS)
@@ -712,7 +698,7 @@ flask db upgrade
 
 ## Version History
 
-### v2.0.0 (Current)
+### v1.0.0 (Current)
 - Strategy builder with multi-leg support
 - Supertrend indicator (Pine Script v6 compatible)
 - Risk management (max loss/profit, trailing SL, Supertrend exits)
@@ -723,22 +709,12 @@ flask db upgrade
 - SENSEX instrument support
 - UV package manager support
 - Risk event audit logging
-
-### v1.0.0
 - Multi-account OpenAlgo integration (24 brokers)
 - Zero-trust security architecture
 - Fernet encryption for API keys
 - Multi-tier rate limiting
 - Real-time dashboard
 - Mobile-responsive UI with OpenAlgo theme
-
----
-
-## License
-
-**Proprietary Software - Copyright 2024 OpenFlare Technologies. All Rights Reserved.**
-
-This software is confidential and proprietary. Unauthorized copying, modification, or distribution is prohibited.
 
 ---
 
@@ -750,4 +726,4 @@ This software is confidential and proprietary. Unauthorized copying, modificatio
 
 ---
 
-**Built by OpenFlare Technologies | Powered by OpenAlgo**
+**Powered by OpenAlgo**
