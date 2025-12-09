@@ -1322,7 +1322,7 @@ async function confirmCancelOrder() {
             return;
         }
 
-        const strategyId = {{ strategy.id if strategy else 'null' }};
+        const strategyId = {{ strategy.id|tojson if strategy else 'null' }};
         if (!strategyId) {
             showNotification('Strategy ID not found', 'error');
             return;
@@ -1373,7 +1373,7 @@ async function modifyLegPrice(button) {
             return;
         }
 
-        const strategyId = {{ strategy.id if strategy else 'null' }};
+        const strategyId = {{ strategy.id|tojson if strategy else 'null' }};
         if (!strategyId) {
             showNotification('Strategy ID not found', 'error');
             return;
@@ -1425,7 +1425,7 @@ async function convertToMarket(button) {
             return;
         }
 
-        const strategyId = {{ strategy.id if strategy else 'null' }};
+        const strategyId = {{ strategy.id|tojson if strategy else 'null' }};
         if (!strategyId) {
             showNotification('Strategy ID not found', 'error');
             return;
@@ -2364,7 +2364,7 @@ function updateRiskMonitorTable(strategyData) {
 
 // Risk Status SSE Connection
 let riskEventSource = null;
-const strategyIdForRisk = {{ strategy.id if strategy else 'null' }};
+const strategyIdForRisk = {{ strategy.id|tojson if strategy else 'null' }};
 
 function startRiskStatusStream() {
     if (!strategyIdForRisk || !document.getElementById('riskStatusSection')) {
