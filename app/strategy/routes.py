@@ -170,7 +170,7 @@ def builder(strategy_id=None):
             strategy.description = data.get('description')
             strategy.market_condition = data.get('market_condition')
             strategy.risk_profile = data.get('risk_profile')
-            strategy.product_order_type = data.get('product_order_type', 'MIS')
+            strategy.product_order_type = data.get('product_order_type', 'NRML')
             strategy.selected_accounts = data.get('selected_accounts', [])
             strategy.allocation_type = data.get('allocation_type', 'equal')
 

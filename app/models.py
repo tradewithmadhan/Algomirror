@@ -306,7 +306,7 @@ class Strategy(db.Model):
     supertrend_exit_triggered_at = db.Column(db.DateTime)  # When the exit was triggered
 
     # Order settings
-    product_order_type = db.Column(db.String(10), default='MIS')  # 'MIS' or 'NRML'
+    product_order_type = db.Column(db.String(10), default='NRML')  # 'NRML' or 'MIS'
 
     # Multi-account settings
     selected_accounts = db.Column(db.JSON)  # List of account IDs
