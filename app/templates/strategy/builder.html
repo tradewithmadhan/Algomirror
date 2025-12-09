@@ -157,19 +157,29 @@
                     <div class="form-control">
                         <label class="label py-1"><span class="label-text text-xs font-semibold text-black">Product Order Type</span></label>
                         <select id="productOrderType" class="select select-bordered select-sm text-black">
-                            <option value="MIS" {% if strategy and strategy.product_order_type == 'MIS' %}selected{% elif not strategy %}selected{% endif %}>MIS (Intraday)</option>
-                            <option value="NRML" {% if strategy and strategy.product_order_type == 'NRML' %}selected{% endif %}>NRML (Overnight)</option>
+                            <option value="NRML" {% if strategy and strategy.product_order_type == 'NRML' %}selected{% elif not strategy %}selected{% endif %}>NRML (Overnight)</option>
+                            <option value="MIS" {% if strategy and strategy.product_order_type == 'MIS' %}selected{% endif %}>MIS (Intraday)</option>
                         </select>
                     </div>
                 </div>
 
                 <!-- Row 2: Select Accounts (Horizontal) -->
                 <div class="form-control">
-                    <label class="label py-1"><span class="label-text text-xs font-semibold text-black">Select Accounts</span></label>
+                    <label class="label py-1">
+                        <span class="label-text text-xs font-semibold text-black">Select Accounts</span>
+                        {% if accounts|length >= 2 %}
+                        <span class="label-text-alt">
+                            <label class="flex items-center cursor-pointer gap-1 text-primary hover:text-primary-focus">
+                                <input type="checkbox" id="selectAllAccounts" class="checkbox checkbox-primary checkbox-xs" onchange="toggleAllAccounts(this)">
+                                <span class="text-xs font-medium">Select All</span>
+                            </label>
+                        </span>
+                        {% endif %}
+                    </label>
                     <div class="flex flex-wrap gap-4" id="accounts-container">
                         {% for account in accounts %}
                         <label class="flex items-center cursor-pointer gap-2">
-                            <input type="checkbox" class="checkbox checkbox-primary checkbox-sm"
+                            <input type="checkbox" class="checkbox checkbox-primary checkbox-sm account-checkbox"
                                    name="accounts" value="{{ account.id }}"
                                    {% if strategy and strategy.selected_accounts and account.id in strategy.selected_accounts %}checked{% endif %}
                                    id="account-checkbox-{{ account.id }}">
@@ -1026,6 +1036,37 @@
 <script>
 let legCount = 0;
 let lotSizes = {};  // Store lot sizes fetched from backend
+
+// Toggle all account checkboxes
+function toggleAllAccounts(selectAllCheckbox) {
+    const accountCheckboxes = document.querySelectorAll('.account-checkbox');
+    accountCheckboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+}
+
+// Update "Select All" checkbox state based on individual checkboxes
+function updateSelectAllState() {
+    const selectAllCheckbox = document.getElementById('selectAllAccounts');
+    if (!selectAllCheckbox) return;
+
+    const accountCheckboxes = document.querySelectorAll('.account-checkbox');
+    const allChecked = Array.from(accountCheckboxes).every(cb => cb.checked);
+    const someChecked = Array.from(accountCheckboxes).some(cb => cb.checked);
+
+    selectAllCheckbox.checked = allChecked;
+    selectAllCheckbox.indeterminate = someChecked && !allChecked;
+}
+
+// Add event listeners to account checkboxes
+document.addEventListener('DOMContentLoaded', function() {
+    const accountCheckboxes = document.querySelectorAll('.account-checkbox');
+    accountCheckboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectAllState);
+    });
+    // Initialize state
+    updateSelectAllState();
+});
 
 // Fetch lot sizes on page load
 async function fetchLotSizes() {
