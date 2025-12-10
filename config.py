@@ -4,9 +4,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Get the base directory (project root)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def get_database_uri():
+    """Resolve database URI, converting relative SQLite paths to absolute."""
+    db_url = os.environ.get('DATABASE_URL') or 'sqlite:///instance/algomirror.db'
+
+    # Handle relative SQLite paths (sqlite:/// with no drive letter)
+    if db_url.startswith('sqlite:///') and not db_url.startswith('sqlite:////'):
+        # Extract the relative path after sqlite:///
+        relative_path = db_url[10:]  # Remove 'sqlite:///'
+        # Skip if it's already an absolute path (e.g., D:/ or C:/)
+        if not os.path.isabs(relative_path):
+            absolute_path = os.path.join(BASE_DIR, relative_path)
+            return f'sqlite:///{absolute_path}'
+
+    return db_url
+
 class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or 'sqlite:///algomirror.db'
+    SQLALCHEMY_DATABASE_URI = get_database_uri()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # SQLite-specific settings for handling locks
