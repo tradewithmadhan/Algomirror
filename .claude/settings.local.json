@@ -44,7 +44,8 @@
       "Bash(npm install)",
       "Bash(gh issue view:*)",
       "WebFetch(domain:github.com)",
-      "Skill(frontend-design:frontend-design)"
+      "Skill(frontend-design:frontend-design)",
+      "Bash(docker compose:*)"
     ],
     "deny": [],
     "ask": []
