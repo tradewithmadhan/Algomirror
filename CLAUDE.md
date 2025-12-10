@@ -13,10 +13,13 @@ AlgoMirror is a **proprietary** enterprise-grade multi-account management platfo
 #### Method 1: Using UV (Recommended - Faster)
 ```bash
 # Install UV (if not already installed)
-# Windows PowerShell
+# Option 1: Using pip (simplest)
+pip install uv
+
+# Option 2: Windows PowerShell (standalone)
 powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# macOS/Linux
+# Option 3: macOS/Linux (standalone)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Create and activate virtual environment
