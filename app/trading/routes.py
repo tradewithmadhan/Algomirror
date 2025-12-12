@@ -1522,6 +1522,9 @@ def risk_status_stream():
         """
         Execute exit order for a specific leg when SL/TP is hit.
 
+        IMPORTANT: This exits on the EXECUTION's account, not the primary account.
+        For multi-account strategies, each execution is tied to a specific account.
+
         Args:
             execution_id: ID of the StrategyExecution to close
             strategy_id: ID of the strategy
@@ -1542,27 +1545,31 @@ def risk_status_stream():
         try:
             # Use app context for database operations
             with app.app_context():
+                # Get the execution first - we need its account
+                execution = StrategyExecution.query.get(execution_id)
+                if not execution:
+                    app.logger.error(f"[RISK MONITOR] Execution {execution_id} not found")
+                    return False
+
                 # Get the strategy
                 strategy = Strategy.query.get(strategy_id)
                 if not strategy:
                     app.logger.error(f"[RISK MONITOR] Strategy not found for execution {execution_id}")
                     return False
 
-                # Get primary account
-                primary_account = TradingAccount.query.filter_by(
-                    user_id=strategy.user_id,
-                    is_primary=True,
-                    is_active=True
-                ).first()
-
-                if not primary_account:
-                    app.logger.error(f"[RISK MONITOR] No primary account found for user {strategy.user_id}")
+                # Use the execution's account (NOT primary account)
+                # Each execution is tied to a specific account in multi-account setups
+                account = execution.account
+                if not account or not account.is_active:
+                    app.logger.error(f"[RISK MONITOR] Account not found or inactive for execution {execution_id}")
                     return False
 
-                # Initialize OpenAlgo client
+                app.logger.debug(f"[RISK MONITOR] Using account {account.account_name} for execution {execution_id}")
+
+                # Initialize OpenAlgo client with the execution's account
                 client = ExtendedOpenAlgoAPI(
-                    api_key=primary_account.get_api_key(),
-                    host=primary_account.host_url
+                    api_key=account.get_api_key(),
+                    host=account.host_url
                 )
 
                 # Determine exit action (reverse of entry)
@@ -1570,7 +1577,7 @@ def risk_status_stream():
                 exit_action = 'SELL' if entry_action == 'BUY' else 'BUY'
 
                 # Place exit order using keyword arguments
-                app.logger.debug(f"[RISK MONITOR] Placing exit order: symbol={symbol}, action={exit_action}, qty={quantity}")
+                app.logger.debug(f"[RISK MONITOR] Placing exit order on {account.account_name}: symbol={symbol}, action={exit_action}, qty={quantity}")
                 response = client.placeorder(
                     strategy=strategy.name,
                     symbol=symbol,
@@ -1584,9 +1591,9 @@ def risk_status_stream():
                 if response.get('status') == 'success':
                     order_id = response.get('orderid')
 
-                    # Create Order record for orderbook/tradebook
+                    # Create Order record for orderbook/tradebook using execution's account
                     order = Order(
-                        account_id=primary_account.id,
+                        account_id=account.id,
                         order_id=order_id,
                         symbol=symbol,
                         exchange=exchange,
@@ -1607,15 +1614,15 @@ def risk_status_stream():
 
                     db.session.commit()
 
-                    # Add exit order to polling queue for status tracking
+                    # Add exit order to polling queue for status tracking (use execution's account)
                     order_status_poller.add_order(
                         execution_id=execution_id,
-                        account=primary_account,
+                        account=account,
                         order_id=order_id,
                         strategy_name=strategy.name
                     )
 
-                    print(f"[RISK MONITOR] Exit order {order_id} placed for {symbol}", flush=True)
+                    print(f"[RISK MONITOR] Exit order {order_id} placed for {symbol} on {account.account_name}", flush=True)
                     return True
                 else:
                     error_msg = response.get('message', 'Unknown error')
@@ -1631,6 +1638,9 @@ def risk_status_stream():
     def close_all_strategy_positions(strategy_id, exit_reason):
         """
         Close all open positions for a strategy when Max Loss/Max Profit is hit.
+
+        IMPORTANT: For multi-account strategies, each execution is closed on its own account.
+        This ensures orders are placed to the correct broker account.
 
         Args:
             strategy_id: ID of the strategy
@@ -1660,32 +1670,34 @@ def risk_status_stream():
                     print(f"[RISK MONITOR] No open positions to close for strategy {strategy_id}", flush=True)
                     return True
 
-                # Get primary account
-                primary_account = TradingAccount.query.filter_by(
-                    user_id=strategy.user_id,
-                    is_primary=True,
-                    is_active=True
-                ).first()
+                print(f"[RISK MONITOR] {exit_reason.upper()}: Closing {len(open_executions)} positions across multiple accounts", flush=True)
 
-                if not primary_account:
-                    print(f"[RISK MONITOR] ERROR: No primary account found for user {strategy.user_id}", flush=True)
-                    return False
-
-                # Initialize OpenAlgo client
-                client = ExtendedOpenAlgoAPI(
-                    api_key=primary_account.get_api_key(),
-                    host=primary_account.host_url
-                )
+                # Cache clients per account to avoid creating multiple instances
+                account_clients = {}
 
                 success_count = 0
                 for execution in open_executions:
                     try:
+                        # Use the execution's account (NOT primary account)
+                        account = execution.account
+                        if not account or not account.is_active:
+                            print(f"[RISK MONITOR] ERROR: Account not found or inactive for execution {execution.id}", flush=True)
+                            continue
+
+                        # Get or create client for this account
+                        if account.id not in account_clients:
+                            account_clients[account.id] = ExtendedOpenAlgoAPI(
+                                api_key=account.get_api_key(),
+                                host=account.host_url
+                            )
+                        client = account_clients[account.id]
+
                         # Get entry action from leg
                         leg = execution.leg
                         entry_action = leg.action.upper() if leg else 'BUY'
                         exit_action = 'SELL' if entry_action == 'BUY' else 'BUY'
 
-                        print(f"[RISK MONITOR] {exit_reason.upper()}: Placing exit order for {execution.symbol}, action={exit_action}, qty={execution.quantity}", flush=True)
+                        print(f"[RISK MONITOR] {exit_reason.upper()}: Placing exit order for {execution.symbol} on {account.account_name}, action={exit_action}, qty={execution.quantity}", flush=True)
                         response = client.placeorder(
                             strategy=strategy.name,
                             symbol=execution.symbol,
@@ -1699,9 +1711,9 @@ def risk_status_stream():
                         if response.get('status') == 'success':
                             order_id = response.get('orderid')
 
-                            # Create Order record for orderbook/tradebook
+                            # Create Order record for orderbook/tradebook (using execution's account)
                             order = Order(
-                                account_id=primary_account.id,
+                                account_id=account.id,
                                 order_id=order_id,
                                 symbol=execution.symbol,
                                 exchange=execution.exchange,
@@ -1718,17 +1730,17 @@ def risk_status_stream():
                             execution.exit_reason = exit_reason
                             success_count += 1
 
-                            # Add exit order to polling queue for status tracking
+                            # Add exit order to polling queue (using execution's account)
                             order_status_poller.add_order(
                                 execution_id=execution.id,
-                                account=primary_account,
+                                account=account,
                                 order_id=order_id,
                                 strategy_name=strategy.name
                             )
 
-                            print(f"[RISK MONITOR] Exit order {order_id} placed for {execution.symbol}", flush=True)
+                            print(f"[RISK MONITOR] Exit order {order_id} placed for {execution.symbol} on {account.account_name}", flush=True)
                         else:
-                            print(f"[RISK MONITOR] ERROR: Failed to place exit for {execution.symbol}: {response.get('message')}", flush=True)
+                            print(f"[RISK MONITOR] ERROR: Failed to place exit for {execution.symbol} on {account.account_name}: {response.get('message')}", flush=True)
 
                     except Exception as e:
                         print(f"[RISK MONITOR] ERROR: Exception closing {execution.symbol}: {str(e)}", flush=True)
