@@ -21,12 +21,18 @@ def index():
 @main_bp.route('/dashboard')
 @login_required
 def dashboard():
-    """Strategy dashboard showing active strategies and account status (migrated from /strategy)"""
+    """Strategy dashboard showing active strategies and account status (migrated from /strategy)
+
+    OPTIMIZED: Uses single query to fetch all executions and calculates P&L in Python
+    to avoid N+1 query problem (was 90+ queries, now 3 queries).
+    """
     from app.models import Strategy, StrategyExecution
     from datetime import datetime, timedelta
+    from collections import defaultdict
 
     # Get user's strategies
     strategies = Strategy.query.filter_by(user_id=current_user.id).order_by(Strategy.created_at.desc()).all()
+    strategy_ids = [s.id for s in strategies]
 
     # Get user's active accounts
     accounts = TradingAccount.query.filter_by(
@@ -38,18 +44,47 @@ def dashboard():
     if not accounts:
         return redirect(url_for('accounts.add'))
 
-    # Calculate today's P&L across all strategies
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-    today_executions = StrategyExecution.query.join(Strategy).filter(
-        Strategy.user_id == current_user.id,
-        StrategyExecution.created_at >= today_start
-    ).all()
+    # OPTIMIZATION: Fetch ALL executions for user's strategies in ONE query
+    # This replaces 90+ individual queries with just 1
+    all_executions = []
+    if strategy_ids:
+        all_executions = StrategyExecution.query.filter(
+            StrategyExecution.strategy_id.in_(strategy_ids)
+        ).all()
 
-    # Calculate P&L only from successful executions (exclude rejected/failed)
+    # Pre-calculate P&L and position counts in Python (much faster than N queries)
+    # Group executions by strategy_id
+    executions_by_strategy = defaultdict(list)
+    for e in all_executions:
+        executions_by_strategy[e.strategy_id].append(e)
+
+    # Calculate P&L per strategy
+    strategy_pnl = {}
+    for strategy_id, execs in executions_by_strategy.items():
+        realized = 0.0
+        unrealized = 0.0
+        for e in execs:
+            if e.status in ['error', 'failed']:
+                continue
+            if hasattr(e, 'broker_order_status') and e.broker_order_status in ['rejected', 'cancelled']:
+                continue
+            if e.realized_pnl:
+                realized += e.realized_pnl
+            if e.status == 'entered' and e.unrealized_pnl:
+                unrealized += e.unrealized_pnl
+        strategy_pnl[strategy_id] = {
+            'realized': realized,
+            'unrealized': unrealized,
+            'total': realized + unrealized
+        }
+
+    # Calculate today's P&L
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     today_pnl = sum(
         e.realized_pnl or 0
-        for e in today_executions
-        if e.realized_pnl and e.status != 'failed'
+        for e in all_executions
+        if e.created_at and e.created_at >= today_start
+        and e.realized_pnl and e.status != 'failed'
         and not (hasattr(e, 'broker_order_status') and e.broker_order_status in ['rejected', 'cancelled'])
     )
 
@@ -59,6 +94,7 @@ def dashboard():
     # Convert strategies to dictionaries for JSON serialization
     strategies_data = []
     for strategy in strategies:
+        pnl = strategy_pnl.get(strategy.id, {'realized': 0, 'unrealized': 0, 'total': 0})
         strategies_data.append({
             'id': strategy.id,
             'name': strategy.name,
@@ -73,10 +109,10 @@ def dashboard():
             'max_loss': strategy.max_loss,
             'max_profit': strategy.max_profit,
             'trailing_sl': strategy.trailing_sl,
-            # Per-strategy P&L calculation using new properties
-            'total_pnl': strategy.total_pnl,
-            'realized_pnl': strategy.realized_pnl,
-            'unrealized_pnl': strategy.unrealized_pnl
+            # Per-strategy P&L from pre-calculated data (no extra queries!)
+            'total_pnl': pnl['total'],
+            'realized_pnl': pnl['realized'],
+            'unrealized_pnl': pnl['unrealized']
         })
 
     # Convert accounts to dictionaries for JSON serialization
@@ -90,6 +126,12 @@ def dashboard():
             'connection_status': account.connection_status
         })
 
+    # Pre-calculate open positions by (strategy_id, account_id) - avoids N*M queries
+    open_positions_map = defaultdict(int)
+    for e in all_executions:
+        if e.status == 'entered':
+            open_positions_map[(e.strategy_id, e.account_id)] += 1
+
     # Create mapping of account_id -> list of active strategy names (only with open positions)
     account_strategies = {}
     for account in accounts:
@@ -97,32 +139,25 @@ def dashboard():
         for strategy in active_strategies:
             # Check if this account is in the strategy's selected_accounts
             if strategy.selected_accounts and account.id in strategy.selected_accounts:
-                # Only include strategies with open positions for this account
-                open_positions_count = StrategyExecution.query.filter_by(
-                    strategy_id=strategy.id,
-                    account_id=account.id,
-                    status='entered'
-                ).count()
-
-                if open_positions_count > 0:
+                # Use pre-calculated count instead of query
+                open_count = open_positions_map.get((strategy.id, account.id), 0)
+                if open_count > 0:
                     account_strategies[account.id].append({
                         'id': strategy.id,
                         'name': strategy.name,
-                        'positions': open_positions_count
+                        'positions': open_count
                     })
 
     # Calculate overall summary statistics
     total_active_accounts = len(accounts)
 
-    # Count strategies with non-zero open positions
-    strategies_with_positions = 0
-    for strategy in strategies:
-        open_positions_count = StrategyExecution.query.filter_by(
-            strategy_id=strategy.id,
-            status='entered'
-        ).count()
-        if open_positions_count > 0:
-            strategies_with_positions += 1
+    # Count strategies with non-zero open positions (use pre-calculated data)
+    open_positions_by_strategy = defaultdict(int)
+    for e in all_executions:
+        if e.status == 'entered':
+            open_positions_by_strategy[e.strategy_id] += 1
+
+    strategies_with_positions = sum(1 for s in strategies if open_positions_by_strategy.get(s.id, 0) > 0)
 
     # Calculate total available cash across all accounts (will be updated via API in frontend)
     # These are placeholders for the frontend to populate
