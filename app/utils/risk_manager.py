@@ -67,15 +67,145 @@ class RiskManager:
         # Position cache to avoid redundant API calls
         # Format: {account_id: {'positions': [], 'timestamp': datetime}}
         self._positions_cache: Dict[int, Dict] = {}
-        self._cache_ttl_seconds = 3  # Cache positions for 3 seconds
+        self._cache_ttl_seconds = 5  # Cache positions for 5 seconds (matches risk check interval)
+
+        # Track which account is currently working for price feeds (failover support)
+        self._current_price_account_id: Optional[int] = None
+        self._failed_accounts: Dict[int, datetime] = {}  # Track failed accounts with timestamp
+        self._failed_account_cooldown = 60  # Retry failed account after 60 seconds
 
         logger.debug("RiskManager initialized")
+
+    def _get_prices_with_failover(self) -> Dict[str, float]:
+        """
+        Get current prices with automatic failover across accounts.
+
+        Failover Logic:
+        1. Check if within trading hours (skip API calls if market closed)
+        2. Try last working account first (if known)
+        3. Try primary account
+        4. If primary fails, try next active account (max 3 attempts)
+        5. Failed accounts are retried after cooldown period (60s)
+
+        Returns:
+            Dict mapping symbol to LTP price
+        """
+        now = datetime.now()
+
+        # OPTIMIZATION: Skip API calls if outside trading hours
+        if not self._is_within_trading_hours():
+            logger.debug("Outside trading hours - skipping API price fetch")
+            return {}
+
+        # Get all active accounts ordered by: primary first, then by id
+        accounts = TradingAccount.query.filter_by(
+            is_active=True
+        ).order_by(
+            TradingAccount.is_primary.desc(),  # Primary first
+            TradingAccount.id.asc()  # Then by ID
+        ).all()
+
+        if not accounts:
+            logger.warning("No active accounts available for price feeds")
+            return {}
+
+        # OPTIMIZATION: If we have a known working account, try it first
+        if self._current_price_account_id:
+            working_account = next(
+                (a for a in accounts if a.id == self._current_price_account_id),
+                None
+            )
+            if working_account:
+                # Move working account to front of list
+                accounts = [working_account] + [a for a in accounts if a.id != self._current_price_account_id]
+
+        # OPTIMIZATION: Limit failover attempts to 3 accounts max
+        # This prevents 10+ API calls when all accounts are down
+        max_failover_attempts = 3
+        attempts = 0
+
+        # Try each account in order
+        for account in accounts:
+            if attempts >= max_failover_attempts:
+                logger.warning(f"Reached max failover attempts ({max_failover_attempts}), stopping")
+                break
+
+            # Skip recently failed accounts (unless cooldown expired)
+            if account.id in self._failed_accounts:
+                fail_time = self._failed_accounts[account.id]
+                if (now - fail_time).total_seconds() < self._failed_account_cooldown:
+                    continue
+                else:
+                    # Cooldown expired, remove from failed list
+                    del self._failed_accounts[account.id]
+
+            attempts += 1
+
+            # Try to get prices from this account
+            prices = self._get_cached_positions(account)
+
+            if prices:
+                # Success - track this as the working account
+                if self._current_price_account_id != account.id:
+                    if self._current_price_account_id is not None:
+                        logger.warning(f"Price feed failover: switched to account {account.account_name}")
+                    self._current_price_account_id = account.id
+                return prices
+            else:
+                # Failed - mark account and try next
+                self._failed_accounts[account.id] = now
+                logger.warning(f"Price feed failed for account {account.account_name}, trying next...")
+
+        # All attempts failed
+        logger.error(f"All {attempts} failover attempts failed to provide price feeds")
+        return {}
+
+    def _is_within_trading_hours(self) -> bool:
+        """
+        Check if current time is within trading hours.
+        Uses TradingSession from database.
+
+        Returns:
+            bool: True if within trading hours
+        """
+        try:
+            now = datetime.now(pytz.timezone('Asia/Kolkata'))
+            current_time = now.time()
+            day_of_week = now.weekday()
+
+            # Import here to avoid circular imports
+            from app.models import TradingSession, TradingHoursTemplate, MarketHoliday
+
+            # Check if today is a holiday
+            today = now.date()
+            is_holiday = MarketHoliday.query.filter_by(holiday_date=today).first()
+            if is_holiday:
+                return False
+
+            # Get active trading sessions for today
+            sessions = TradingSession.query.join(TradingHoursTemplate).filter(
+                TradingSession.day_of_week == day_of_week,
+                TradingSession.is_active == True,
+                TradingHoursTemplate.is_active == True
+            ).all()
+
+            for session in sessions:
+                if session.start_time <= current_time <= session.end_time:
+                    return True
+
+            return False
+
+        except Exception as e:
+            logger.error(f"Error checking trading hours: {e}")
+            # Default to True to avoid blocking risk checks due to DB errors
+            return True
 
     def _get_cached_positions(self, account: TradingAccount) -> Dict[str, float]:
         """
         Get positions from cache or fetch from API if cache expired.
 
-        Uses a 3-second cache to reduce API calls from 60/min to ~20/min per account.
+        Uses a 5-second cache to reduce API calls and prevent blocking.
+        Includes a 3-second timeout to prevent indefinite hangs.
 
         Args:
             account: Trading account to fetch positions for
@@ -86,20 +216,30 @@ class RiskManager:
         now = datetime.now()
         cache_entry = self._positions_cache.get(account.id)
 
-        # Check if cache is valid
+        # Check if cache is valid (use 5-second cache to reduce API load)
         if cache_entry:
             cache_age = (now - cache_entry['timestamp']).total_seconds()
             if cache_age < self._cache_ttl_seconds:
                 return cache_entry['positions']
 
-        # Fetch fresh positions from API
+        # Fetch fresh positions from API with timeout
         current_prices = {}
         try:
+            import requests
             client = ExtendedOpenAlgoAPI(
                 api_key=account.get_api_key(),
                 host=account.host_url
             )
-            positions_response = client.positionbook()
+            # Set a 3-second timeout on the API call to prevent blocking
+            original_timeout = getattr(requests, 'DEFAULT_TIMEOUT', None)
+            try:
+                positions_response = client.positionbook()
+            except requests.exceptions.Timeout:
+                logger.warning(f"Positions API timeout for account {account.account_name}")
+                if cache_entry:
+                    return cache_entry['positions']
+                return {}
+
             if positions_response.get('status') == 'success':
                 positions_data = positions_response.get('data', [])
                 for pos in positions_data:
@@ -116,7 +256,7 @@ class RiskManager:
 
         except Exception as api_err:
             logger.warning(f"Failed to fetch positions for account {account.account_name}: {api_err}")
-            # Return empty if API fails and no cache
+            # Return cached data if API fails
             if cache_entry:
                 return cache_entry['positions']
 
@@ -177,7 +317,12 @@ class RiskManager:
     def calculate_strategy_pnl(self, strategy: Strategy) -> Dict:
         """
         Calculate total P&L for a strategy across all executions.
-        Uses cached positions API to get real-time LTP for accurate P&L calculation.
+
+        PRICE SOURCES (in order of preference):
+        1. PRIMARY: WebSocket prices from execution.last_price (updated by position_monitor)
+        2. FALLBACK: REST API (positionbook) only if WebSocket price is stale (>30s old)
+
+        This reduces API calls from ~12/min to nearly zero when WebSocket is working.
 
         Args:
             strategy: Strategy to calculate P&L for
@@ -194,32 +339,57 @@ class RiskManager:
                 strategy_id=strategy.id
             ).all()
 
-            # Get open executions to fetch current prices
+            # Get open executions
             open_executions = [e for e in executions if e.status == 'entered']
 
-            # Build a map of current prices from cached positions API
-            current_prices = {}
+            # Check if any WebSocket prices are stale (need API fallback)
+            api_prices = {}
+            needs_api_fallback = False
+
             if open_executions:
-                # Get primary account to fetch positions (use cache to avoid repeated API calls)
-                account = open_executions[0].account
-                if account and account.is_active:
-                    current_prices = self._get_cached_positions(account)
+                now = datetime.now()
+                stale_threshold = 30  # seconds
+
+                for exec in open_executions:
+                    # Check if WebSocket price is stale or missing
+                    if not exec.last_price or not exec.last_price_updated_at:
+                        needs_api_fallback = True
+                        break
+
+                    price_age = (now - exec.last_price_updated_at).total_seconds()
+                    if price_age > stale_threshold:
+                        needs_api_fallback = True
+                        break
+
+                # Only fetch from API if WebSocket prices are stale
+                if needs_api_fallback:
+                    logger.debug("WebSocket prices stale, using API fallback")
+                    api_prices = self._get_prices_with_failover()
 
             for execution in executions:
-                # Use API price if available, otherwise fall back to execution.last_price
-                api_price = current_prices.get(execution.symbol)
-                if api_price and execution.status == 'entered':
-                    # Calculate P&L using API price
+                # PRIORITY: WebSocket price (fresh) > API price (fallback) > entry price
+                current_price = None
+
+                if execution.status == 'entered':
+                    # Try WebSocket price first (from position_monitor)
+                    if execution.last_price and execution.last_price > 0:
+                        current_price = float(execution.last_price)
+                    # Fallback to API price if WebSocket stale
+                    elif api_prices.get(execution.symbol):
+                        current_price = api_prices.get(execution.symbol)
+
+                if current_price and execution.status == 'entered':
+                    # Calculate P&L using best available price
                     entry_price = float(execution.entry_price or 0)
                     quantity = int(execution.quantity or 0)
                     is_long = execution.leg and execution.leg.action.upper() == 'BUY'
 
                     if is_long:
-                        total_unrealized += (api_price - entry_price) * quantity
+                        total_unrealized += (current_price - entry_price) * quantity
                     else:
-                        total_unrealized += (entry_price - api_price) * quantity
+                        total_unrealized += (entry_price - current_price) * quantity
                 else:
-                    # Fall back to stored last_price calculation
+                    # Exited positions - calculate realized P&L
                     realized, unrealized = self.calculate_execution_pnl(execution)
                     total_realized += realized
                     total_unrealized += unrealized

@@ -75,64 +75,130 @@ class OptionChainBackgroundService:
         self.flask_app = app
         logger.debug("Flask app instance registered with background service")
 
-    def get_or_create_shared_websocket(self):
+    def get_or_create_shared_websocket(self, blocking=False):
         """
         Get or create the single shared WebSocket manager for all services.
 
-        This ensures only ONE WebSocket connection to OpenAlgo, which prevents
-        broker connection limit errors (e.g., AngelOne Error 429).
+        FAILOVER SUPPORT: If primary account WebSocket fails, automatically
+        tries next available account until one connects successfully.
+
+        NON-BLOCKING by default - returns immediately, connection happens in background.
+        Services should work with or without WebSocket (graceful degradation).
+
+        Args:
+            blocking: If True, wait for connection (max 3s). Default False.
 
         Returns:
-            ProfessionalWebSocketManager instance or None if creation fails
+            ProfessionalWebSocketManager instance (may not be connected yet) or None
         """
-        # Return existing if already created and connected
-        if self.shared_websocket_manager and \
-           self.shared_websocket_manager.authenticated:
-            logger.debug("Using existing shared WebSocket manager")
-            return self.shared_websocket_manager
+        # Return existing if already created and authenticated
+        if self.shared_websocket_manager:
+            if self.shared_websocket_manager.authenticated:
+                logger.debug("Using existing authenticated WebSocket manager")
+                return self.shared_websocket_manager
+            else:
+                logger.debug("WebSocket manager exists but not yet authenticated")
+                return self.shared_websocket_manager
 
-        # Create new shared WebSocket manager if needed
-        if not self.primary_account:
-            logger.warning("No primary account available for WebSocket connection")
+        # Get all active accounts for failover (primary first, then by ID)
+        all_accounts = self._get_accounts_for_failover()
+        if not all_accounts:
+            logger.warning("No active accounts available for WebSocket connection")
             return None
 
         try:
-            logger.debug("Creating shared WebSocket manager for all services")
+            logger.debug("Creating shared WebSocket manager with failover support")
 
             ws_manager = ProfessionalWebSocketManager()
             ws_manager.create_connection_pool(
-                primary_account=self.primary_account,
-                backup_accounts=self.backup_accounts
+                primary_account=all_accounts[0],
+                backup_accounts=all_accounts[1:] if len(all_accounts) > 1 else []
             )
 
-            if hasattr(self.primary_account, 'websocket_url'):
-                connected = ws_manager.connect(
-                    ws_url=self.primary_account.websocket_url,
-                    api_key=self.primary_account.get_api_key(),
-                    host_url=self.primary_account.host_url
-                )
+            # Store immediately so other services can access it
+            self.shared_websocket_manager = ws_manager
 
-                # Wait for authentication
+            # Start connection with failover in background thread (non-blocking)
+            def connect_websocket_with_failover():
+                for account in all_accounts:
+                    if not hasattr(account, 'websocket_url') or not account.websocket_url:
+                        logger.debug(f"Account {account.account_name} has no websocket_url, skipping")
+                        continue
+
+                    try:
+                        logger.debug(f"Trying WebSocket connection to account: {account.account_name}")
+                        ws_manager.connect(
+                            ws_url=account.websocket_url,
+                            api_key=account.get_api_key(),
+                            host_url=account.host_url
+                        )
+
+                        # Wait briefly for authentication
+                        auth_wait = 0
+                        while not ws_manager.authenticated and auth_wait < 3:
+                            sleep(0.5)
+                            auth_wait += 0.5
+
+                        if ws_manager.authenticated:
+                            logger.debug(f"WebSocket connected via account: {account.account_name}")
+                            return  # Success - exit loop
+                        else:
+                            logger.warning(f"WebSocket auth failed for {account.account_name}, trying next...")
+
+                    except Exception as e:
+                        logger.warning(f"WebSocket connection failed for {account.account_name}: {e}")
+                        continue
+
+                logger.error("All accounts failed for WebSocket connection")
+
+            # Spawn connection in background
+            spawn(connect_websocket_with_failover)
+
+            # Only wait if blocking mode requested (for critical operations)
+            if blocking:
                 auth_wait_time = 0
-                while not ws_manager.authenticated and auth_wait_time < 5:
+                while not ws_manager.authenticated and auth_wait_time < 3:
                     sleep(0.5)
                     auth_wait_time += 0.5
 
-                if not ws_manager.authenticated:
-                    logger.error("Shared WebSocket authentication failed")
-                    return None
-
-                # Store as shared instance
-                self.shared_websocket_manager = ws_manager
-                logger.debug("✅ Shared WebSocket manager created and authenticated")
-                return ws_manager
-            else:
-                logger.error("Primary account missing websocket_url")
-                return None
+            return ws_manager
 
         except Exception as e:
             logger.error(f"Error creating shared WebSocket manager: {e}")
             return None
+
+    def _get_accounts_for_failover(self) -> list:
+        """
+        Get all active accounts ordered for failover (primary first).
+
+        Returns:
+            List of TradingAccount objects, primary first then by ID
+        """
+        try:
+            if self.flask_app:
+                with self.flask_app.app_context():
+                    accounts = TradingAccount.query.filter_by(
+                        is_active=True
+                    ).order_by(
+                        TradingAccount.is_primary.desc(),
+                        TradingAccount.id.asc()
+                    ).all()
+                    return accounts
+            else:
+                # Fallback to primary + backup accounts if app context not available
+                accounts = []
+                if self.primary_account:
+                    accounts.append(self.primary_account)
+                accounts.extend(self.backup_accounts)
+                return accounts
+        except Exception as e:
+            logger.error(f"Error getting accounts for failover: {e}")
+            return []
+
+    def is_websocket_ready(self) -> bool:
+        """Check if WebSocket is connected and authenticated (non-blocking check)"""
+        return (self.shared_websocket_manager is not None and
+                self.shared_websocket_manager.authenticated)
 
     def start_service(self):
         """Start the background service"""
@@ -150,15 +216,18 @@ class OptionChainBackgroundService:
             # Schedule market hours check
             self.schedule_market_hours()
 
-            # NEW: Schedule risk manager to run every 1 second
+            # NEW: Schedule risk manager to run every 5 seconds (not 1s - prevents blocking)
+            # APScheduler max_instances=1 means it will skip if previous run still running
             self.scheduler.add_job(
                 func=self.run_risk_checks,
                 trigger='interval',
-                seconds=1,
+                seconds=5,
                 id='risk_manager_check',
-                replace_existing=True
+                replace_existing=True,
+                max_instances=1,  # Skip if previous run still active (non-blocking)
+                misfire_grace_time=10  # Allow 10s grace for misfired jobs
             )
-            logger.debug("Risk manager scheduled (1-second interval)")
+            logger.debug("Risk manager scheduled (5-second interval)")
 
             # NEW: Schedule session cleanup to run every minute
             self.scheduler.add_job(
@@ -169,6 +238,18 @@ class OptionChainBackgroundService:
                 replace_existing=True
             )
             logger.debug("Session cleanup scheduled (1-minute interval)")
+
+            # NEW: Schedule WebSocket reconnect check every 30 seconds
+            # This ensures position monitor subscribes when WebSocket becomes available
+            self.scheduler.add_job(
+                func=self.check_websocket_and_subscribe,
+                trigger='interval',
+                seconds=30,
+                id='websocket_reconnect_check',
+                replace_existing=True,
+                max_instances=1
+            )
+            logger.debug("WebSocket reconnect check scheduled (30-second interval)")
     
     def stop_service(self):
         """Stop the background service"""
@@ -887,24 +968,29 @@ class OptionChainBackgroundService:
     # NEW METHODS FOR POSITION MONITORING AND RISK MANAGEMENT
 
     def start_position_monitor(self):
-        """Start position monitoring (subscribes to open positions only)"""
+        """Start position monitoring (subscribes to open positions only)
+
+        NON-BLOCKING: Starts even if WebSocket isn't ready yet.
+        Position monitor will use WebSocket when available, otherwise uses API polling.
+        """
         if self.position_monitor_running:
             logger.debug("Position monitor already running")
             return
 
         try:
-            # Use the single shared WebSocket manager for all services
-            # This prevents creating multiple connections to OpenAlgo
-            ws_manager = self.get_or_create_shared_websocket()
+            # Get WebSocket manager (non-blocking - may not be connected yet)
+            # Position monitor works with or without WebSocket
+            ws_manager = self.get_or_create_shared_websocket(blocking=False)
 
-            if not ws_manager:
-                logger.error("Failed to get shared WebSocket manager for position monitor")
-                return
-
-            # Start position monitor with shared WebSocket manager and Flask app
+            # Start position monitor even without WebSocket
+            # It will use API polling as fallback and pick up WebSocket when ready
             position_monitor.start(ws_manager, app=self.flask_app)
             self.position_monitor_running = True
-            logger.debug("✅ Position monitor started with shared WebSocket connection")
+
+            if ws_manager and ws_manager.authenticated:
+                logger.debug("Position monitor started with WebSocket connection")
+            else:
+                logger.debug("Position monitor started (WebSocket connecting in background)")
 
         except Exception as e:
             logger.error(f"Error starting position monitor: {e}")
@@ -985,6 +1071,45 @@ class OptionChainBackgroundService:
                 logger.warning("Flask app not available for session cleanup")
         except Exception as e:
             logger.error(f"Error cleaning up sessions: {e}")
+
+    def check_websocket_and_subscribe(self):
+        """Check if WebSocket is ready and subscribe position monitor if needed.
+
+        Called every 30 seconds to handle delayed WebSocket connections.
+        Non-blocking - just checks and subscribes if ready.
+        """
+        try:
+            # Skip if outside trading hours
+            if not self.is_trading_hours():
+                return
+
+            # Skip if position monitor not running
+            if not self.position_monitor_running:
+                return
+
+            # Check if WebSocket is now authenticated
+            if not self.is_websocket_ready():
+                # Try to reconnect WebSocket if primary account available
+                if self.primary_account and not self.shared_websocket_manager:
+                    logger.debug("Attempting WebSocket reconnection...")
+                    self.get_or_create_shared_websocket(blocking=False)
+                return
+
+            # WebSocket is ready - ensure position monitor has subscribed
+            if self.flask_app:
+                with self.flask_app.app_context():
+                    # Check if position monitor needs to subscribe
+                    if position_monitor.websocket_manager != self.shared_websocket_manager:
+                        # Update WebSocket manager reference
+                        position_monitor.websocket_manager = self.shared_websocket_manager
+                        logger.debug("Position monitor WebSocket manager updated")
+
+                    # Subscribe to positions if not already subscribed
+                    if not position_monitor.subscribed_symbols:
+                        position_monitor.subscribe_to_positions()
+                        logger.debug("Position monitor subscribed to positions via reconnect check")
+        except Exception as e:
+            logger.error(f"Error in WebSocket reconnect check: {e}")
 
 
 # Global service instance

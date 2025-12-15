@@ -582,8 +582,12 @@ class PositionMonitor:
         """
         Start position monitoring.
 
+        NON-BLOCKING: Works with or without WebSocket.
+        - With WebSocket: Real-time price updates via subscription
+        - Without WebSocket: Uses cached API data from risk manager
+
         Args:
-            websocket_manager: WebSocket manager instance
+            websocket_manager: WebSocket manager instance (can be None or not-yet-connected)
             app: Flask app instance (for creating app context in WebSocket callbacks)
         """
         import threading
@@ -592,7 +596,7 @@ class PositionMonitor:
             logger.warning("Position monitor already running")
             return
 
-        # Store websocket manager reference
+        # Store websocket manager reference (may be None or not connected)
         self.websocket_manager = websocket_manager
 
         # Store Flask app reference for batch flush operations
@@ -608,13 +612,18 @@ class PositionMonitor:
             logger.debug("Position monitoring not started - conditions not met")
             return
 
-        # Register WebSocket data handler for quote updates
-        if hasattr(websocket_manager, 'data_processor'):
+        # Register WebSocket data handler for quote updates (if WebSocket available)
+        if websocket_manager and hasattr(websocket_manager, 'data_processor'):
             websocket_manager.data_processor.register_quote_handler(self._handle_websocket_data)
             logger.debug("Position monitor registered for WebSocket quote updates")
+        else:
+            logger.debug("Position monitor started without WebSocket (will use API polling)")
 
-        # Subscribe to open positions
-        self.subscribe_to_positions()
+        # Subscribe to open positions (only if WebSocket is ready)
+        if websocket_manager and websocket_manager.authenticated:
+            self.subscribe_to_positions()
+        else:
+            logger.debug("Skipping WebSocket subscriptions - WebSocket not ready")
 
         self.is_running = True
 
