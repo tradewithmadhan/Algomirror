@@ -2423,10 +2423,11 @@ function updateRiskStatusDisplay(data) {
         currentPnlEl.className = `font-bold text-lg ml-1 ${pnl >= 0 ? 'text-success' : 'text-error'}`;
     }
 
-    // Update Max Loss progress
+    // Update Max Loss progress and status
     const maxLossProgress = document.getElementById('riskMaxLossProgress');
     const maxLossAmount = document.getElementById('riskMaxLossAmount');
     const maxLossPct = document.getElementById('riskMaxLossPct');
+    const maxLossStatus = document.getElementById('riskMaxLossStatus');
 
     if (maxLossProgress && maxLossAmount && maxLossPct) {
         const pct = strategyData.max_loss_pct || 0;
@@ -2446,10 +2447,17 @@ function updateRiskStatusDisplay(data) {
         }
     }
 
-    // Update Max Profit progress
+    // Update Max Loss status badge to "Triggered" if triggered
+    if (maxLossStatus && strategyData.max_loss_triggered_at) {
+        maxLossStatus.textContent = 'Triggered';
+        maxLossStatus.className = 'badge badge-error badge-sm ml-1';
+    }
+
+    // Update Max Profit progress and status
     const maxProfitProgress = document.getElementById('riskMaxProfitProgress');
     const maxProfitAmount = document.getElementById('riskMaxProfitAmount');
     const maxProfitPct = document.getElementById('riskMaxProfitPct');
+    const maxProfitStatus = document.getElementById('riskMaxProfitStatus');
 
     if (maxProfitProgress && maxProfitAmount && maxProfitPct) {
         const pct = strategyData.max_profit_pct || 0;
@@ -2458,6 +2466,12 @@ function updateRiskStatusDisplay(data) {
         maxProfitProgress.value = pct;
         maxProfitAmount.textContent = `₹${amount.toFixed(2)}`;
         maxProfitPct.textContent = `${pct}%`;
+    }
+
+    // Update Max Profit status badge to "Triggered" if triggered
+    if (maxProfitStatus && strategyData.max_profit_triggered_at) {
+        maxProfitStatus.textContent = 'Triggered';
+        maxProfitStatus.className = 'badge badge-success badge-sm ml-1';
     }
 
     // NOTE: TSL status is now updated by updateTrailingSLDisplay() called from refreshPositions()
@@ -2555,9 +2569,11 @@ function updateRiskStatusDisplay(data) {
         if (strategyData.max_loss_triggered_at) {
             maxLossStatusEl.textContent = 'Triggered';
             maxLossStatusEl.className = 'badge badge-error badge-sm ml-1';
-            // Hide progress bar when triggered
+            // Hide progress bar and percentage display when triggered (but keep the card)
             const progressEl = document.getElementById('riskMaxLossProgress');
-            if (progressEl) progressEl.parentElement?.remove();
+            if (progressEl) progressEl.style.display = 'none';
+            const maxLossAmountDisplay = document.getElementById('riskMaxLossAmount')?.parentElement;
+            if (maxLossAmountDisplay) maxLossAmountDisplay.style.display = 'none';
         }
     }
     // Create Max Loss exit reason display
@@ -2588,9 +2604,11 @@ function updateRiskStatusDisplay(data) {
         if (strategyData.max_profit_triggered_at) {
             maxProfitStatusEl.textContent = 'Triggered';
             maxProfitStatusEl.className = 'badge badge-success badge-sm ml-1';
-            // Hide progress bar when triggered
+            // Hide progress bar and percentage display when triggered (but keep the card)
             const progressEl = document.getElementById('riskMaxProfitProgress');
-            if (progressEl) progressEl.parentElement?.remove();
+            if (progressEl) progressEl.style.display = 'none';
+            const maxProfitAmountDisplay = document.getElementById('riskMaxProfitAmount')?.parentElement;
+            if (maxProfitAmountDisplay) maxProfitAmountDisplay.style.display = 'none';
         }
     }
     // Create Max Profit exit reason display
@@ -2767,6 +2785,10 @@ function updateRiskStatusHTML(strategyData) {
     // Build HTML for Max Loss
     let maxLossHtml = '';
     if (strategyData.max_loss) {
+        const maxLossTriggered = strategyData.max_loss_triggered_at;
+        const maxLossStatusText = maxLossTriggered ? 'Triggered' : 'Active';
+        const maxLossStatusClass = maxLossTriggered ? 'badge-error' : 'badge-success';
+
         maxLossHtml = `
             <div class="bg-base-100 rounded-lg p-3" id="maxLossCard">
                 <div class="flex justify-between text-sm mb-2">
@@ -2776,11 +2798,15 @@ function updateRiskStatusHTML(strategyData) {
                         </svg>
                         Max Loss
                     </span>
-                    <span class="font-mono font-bold">${strategyData.max_loss}</span>
+                    <span class="font-mono font-bold">₹${strategyData.max_loss}</span>
+                </div>
+                <div class="text-sm mb-2">
+                    <span class="text-base-content/60">Status:</span>
+                    <span class="badge ${maxLossStatusClass} badge-sm ml-1" id="riskMaxLossStatus">${maxLossStatusText}</span>
                 </div>
                 <progress class="progress progress-error w-full h-3" id="riskMaxLossProgress" value="${strategyData.max_loss_pct || 0}" max="100"></progress>
                 <div class="flex justify-between text-xs mt-1">
-                    <span id="riskMaxLossAmount">${strategyData.total_pnl < 0 ? Math.abs(strategyData.total_pnl).toFixed(2) : '0.00'}</span>
+                    <span id="riskMaxLossAmount">₹${strategyData.total_pnl < 0 ? Math.abs(strategyData.total_pnl).toFixed(2) : '0.00'}</span>
                     <span id="riskMaxLossPct">${strategyData.max_loss_pct || 0}%</span>
                 </div>
                 ${strategyData.auto_exit_on_max_loss ? '<div class="badge badge-error badge-xs mt-2">Auto Exit</div>' : ''}
@@ -2791,6 +2817,10 @@ function updateRiskStatusHTML(strategyData) {
     // Build HTML for Max Profit
     let maxProfitHtml = '';
     if (strategyData.max_profit) {
+        const maxProfitTriggered = strategyData.max_profit_triggered_at;
+        const maxProfitStatusText = maxProfitTriggered ? 'Triggered' : 'Active';
+        const maxProfitStatusClass = maxProfitTriggered ? 'badge-success' : 'badge-info';
+
         maxProfitHtml = `
             <div class="bg-base-100 rounded-lg p-3" id="maxProfitCard">
                 <div class="flex justify-between text-sm mb-2">
@@ -2800,11 +2830,15 @@ function updateRiskStatusHTML(strategyData) {
                         </svg>
                         Max Profit
                     </span>
-                    <span class="font-mono font-bold">${strategyData.max_profit}</span>
+                    <span class="font-mono font-bold">₹${strategyData.max_profit}</span>
+                </div>
+                <div class="text-sm mb-2">
+                    <span class="text-base-content/60">Status:</span>
+                    <span class="badge ${maxProfitStatusClass} badge-sm ml-1" id="riskMaxProfitStatus">${maxProfitStatusText}</span>
                 </div>
                 <progress class="progress progress-success w-full h-3" id="riskMaxProfitProgress" value="${strategyData.max_profit_pct || 0}" max="100"></progress>
                 <div class="flex justify-between text-xs mt-1">
-                    <span id="riskMaxProfitAmount">${strategyData.total_pnl > 0 ? strategyData.total_pnl.toFixed(2) : '0.00'}</span>
+                    <span id="riskMaxProfitAmount">₹${strategyData.total_pnl > 0 ? strategyData.total_pnl.toFixed(2) : '0.00'}</span>
                     <span id="riskMaxProfitPct">${strategyData.max_profit_pct || 0}%</span>
                 </div>
                 ${strategyData.auto_exit_on_max_profit ? '<div class="badge badge-success badge-xs mt-2">Auto Exit</div>' : ''}

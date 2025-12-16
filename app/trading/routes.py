@@ -1750,6 +1750,22 @@ def risk_status_stream():
                     except Exception as e:
                         print(f"[RISK MONITOR] ERROR: Exception closing {execution.symbol}: {str(e)}", flush=True)
 
+                # Set triggered_at timestamp based on exit reason
+                if success_count > 0:
+                    from datetime import datetime
+                    import pytz
+                    ist = pytz.timezone('Asia/Kolkata')
+                    now_ist = datetime.now(ist)
+
+                    if exit_reason == 'max_loss' and not strategy.max_loss_triggered_at:
+                        strategy.max_loss_triggered_at = now_ist
+                        strategy.max_loss_exit_reason = f"Max Loss {strategy.max_loss} hit"
+                        print(f"[RISK MONITOR] Set max_loss_triggered_at for strategy {strategy.name}", flush=True)
+                    elif exit_reason == 'max_profit' and not strategy.max_profit_triggered_at:
+                        strategy.max_profit_triggered_at = now_ist
+                        strategy.max_profit_exit_reason = f"Max Profit {strategy.max_profit} hit"
+                        print(f"[RISK MONITOR] Set max_profit_triggered_at for strategy {strategy.name}", flush=True)
+
                 db.session.commit()
                 print(f"[RISK MONITOR] {exit_reason.upper()} exit completed: {success_count}/{len(open_executions)} orders placed", flush=True)
                 return success_count > 0
