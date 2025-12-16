@@ -120,6 +120,7 @@ class SupertrendExitService:
                             logger.error(f"Error monitoring strategy {strategy.id}: {e}", exc_info=True)
 
                 # RETRY MECHANISM: Check strategies where Supertrend was triggered but positions still open
+                # Only retry if enough time has passed since the trigger (to avoid race conditions)
                 triggered_strategies = Strategy.query.filter_by(
                     supertrend_exit_enabled=True,
                     supertrend_exit_triggered=True,
@@ -128,10 +129,19 @@ class SupertrendExitService:
 
                 for strategy in triggered_strategies:
                     try:
-                        # Check if there are still open positions
+                        # Skip retry if trigger was too recent (within 30 seconds) to avoid race conditions
+                        if strategy.supertrend_exit_triggered_at:
+                            seconds_since_trigger = (get_ist_now() - strategy.supertrend_exit_triggered_at).total_seconds()
+                            if seconds_since_trigger < 30:
+                                logger.debug(f"[SUPERTREND RETRY] Strategy {strategy.id}: Skipping retry, only {seconds_since_trigger:.0f}s since trigger")
+                                continue
+
+                        # Check if there are still open positions that don't have exit orders
                         open_positions = StrategyExecution.query.filter_by(
                             strategy_id=strategy.id,
                             status='entered'
+                        ).filter(
+                            StrategyExecution.exit_order_id.is_(None)  # Only positions without exit orders
                         ).all()
 
                         # Filter out rejected/cancelled
@@ -142,7 +152,7 @@ class SupertrendExitService:
                         ]
 
                         if open_positions:
-                            logger.debug(f"[SUPERTREND RETRY] Strategy {strategy.id}: Supertrend triggered but {len(open_positions)} positions still open, retrying close")
+                            logger.debug(f"[SUPERTREND RETRY] Strategy {strategy.id}: {len(open_positions)} positions without exit orders, retrying close")
                             self.trigger_parallel_exit(strategy, f"Supertrend RETRY - {len(open_positions)} positions remaining", app)
                     except Exception as e:
                         logger.error(f"Error retrying Supertrend exit for strategy {strategy.id}: {e}", exc_info=True)
@@ -531,10 +541,12 @@ class SupertrendExitService:
                 strategy.supertrend_exit_triggered_at = get_ist_now()
                 db.session.commit()
 
-                # Get all open positions
+                # Get all open positions that don't already have exit orders
                 open_positions = StrategyExecution.query.filter_by(
                     strategy_id=strategy.id,
                     status='entered'
+                ).filter(
+                    StrategyExecution.exit_order_id.is_(None)  # Only positions without exit orders
                 ).all()
 
                 # Filter out rejected/cancelled
