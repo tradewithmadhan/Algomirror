@@ -508,8 +508,13 @@ class SupertrendExitService:
 
     def trigger_parallel_exit(self, strategy: Strategy, exit_reason: str, app):
         """
-        Trigger parallel exit for all open positions in the strategy
-        Reuses the close_all_positions logic from strategy routes
+        Trigger parallel exit for all open positions in the strategy.
+
+        IMPORTANT: For multi-account strategies, each execution is closed on its own account.
+        This ensures orders are placed to the correct broker account.
+
+        Fixed: Pass execution IDs to threads and re-query within each thread's context
+        to avoid SQLAlchemy DetachedInstanceError with multi-account setups.
         """
         with app.app_context():
             from app import db
@@ -545,12 +550,20 @@ class SupertrendExitService:
 
                 logger.debug(f"[SUPERTREND EXIT] Closing {len(open_positions)} positions in parallel")
 
+                # Extract execution IDs and strategy info BEFORE spawning threads
+                # This avoids SQLAlchemy DetachedInstanceError in multi-account setups
+                execution_ids = [pos.id for pos in open_positions]
+                strategy_id = strategy.id
+                strategy_name = strategy.name
+                product_type = strategy.product_order_type
+                user_id = strategy.user_id
+
                 # Thread-safe results collection
                 results = []
                 results_lock = threading.Lock()
 
-                def close_position_worker(position, strategy_name, product_type, thread_index, user_id):
-                    """Worker to close a single position"""
+                def close_position_worker(execution_id, strategy_name, product_type, thread_index, user_id, exit_reason):
+                    """Worker to close a single position - re-queries execution in thread context"""
                     import time
 
                     # Staggered delay to prevent race conditions
@@ -562,12 +575,38 @@ class SupertrendExitService:
                     app_ctx = create_app()
                     with app_ctx.app_context():
                         try:
+                            # Re-query the execution in this thread's context
+                            execution = StrategyExecution.query.get(execution_id)
+                            if not execution:
+                                logger.error(f"[SUPERTREND EXIT] Execution {execution_id} not found")
+                                with results_lock:
+                                    results.append({
+                                        'execution_id': execution_id,
+                                        'status': 'error',
+                                        'error': 'Execution not found'
+                                    })
+                                return
+
+                            # Get account for this execution (NOT primary account)
+                            account = execution.account
+                            if not account or not account.is_active:
+                                logger.error(f"[SUPERTREND EXIT] Account not found or inactive for execution {execution_id}")
+                                with results_lock:
+                                    results.append({
+                                        'symbol': execution.symbol,
+                                        'status': 'error',
+                                        'error': 'Account not found or inactive'
+                                    })
+                                return
+
                             # Reverse action for closing
-                            close_action = 'SELL' if position.leg.action == 'BUY' else 'BUY'
+                            leg = execution.leg
+                            entry_action = leg.action.upper() if leg else 'BUY'
+                            close_action = 'SELL' if entry_action == 'BUY' else 'BUY'
 
                             client = ExtendedOpenAlgoAPI(
-                                api_key=position.account.get_api_key(),
-                                host=position.account.host_url
+                                api_key=account.get_api_key(),
+                                host=account.host_url
                             )
 
                             # Place close order with freeze awareness and retry logic
@@ -578,9 +617,11 @@ class SupertrendExitService:
                             retry_delay = 1
                             response = None
 
-                            # Get product type - prefer position's product, fallback to strategy's product_order_type
+                            # Get product type - prefer execution's product, fallback to strategy's product_order_type
                             # This ensures NRML entries exit as NRML, not MIS
-                            exit_product = position.product or product_type or 'MIS'
+                            exit_product = execution.product or product_type or 'MIS'
+
+                            logger.debug(f"[SUPERTREND EXIT] Placing exit for {execution.symbol} on {account.account_name}, action={close_action}, qty={execution.quantity}, product={exit_product}")
 
                             for attempt in range(max_retries):
                                 try:
@@ -588,17 +629,17 @@ class SupertrendExitService:
                                         client=client,
                                         user_id=user_id,
                                         strategy=strategy_name,
-                                        symbol=position.symbol,
-                                        exchange=position.exchange,
+                                        symbol=execution.symbol,
+                                        exchange=execution.exchange,
                                         action=close_action,
-                                        quantity=position.quantity,
+                                        quantity=execution.quantity,
                                         price_type='MARKET',
                                         product=exit_product
                                     )
                                     if response and isinstance(response, dict):
                                         break
                                 except Exception as api_error:
-                                    logger.warning(f"[RETRY] Supertrend exit attempt {attempt + 1}/{max_retries} failed: {api_error}")
+                                    logger.warning(f"[RETRY] Supertrend exit attempt {attempt + 1}/{max_retries} failed for {execution.symbol}: {api_error}")
                                     if attempt < max_retries - 1:
                                         time_module.sleep(retry_delay)
                                         retry_delay *= 2
@@ -606,50 +647,49 @@ class SupertrendExitService:
                                         response = {'status': 'error', 'message': f'API error after {max_retries} retries'}
 
                             if response and response.get('status') == 'success':
-                                # Update position - set to exit_pending, poller will update with actual fill price
-                                position_to_update = StrategyExecution.query.get(position.id)
-                                if position_to_update:
-                                    exit_order_id = response.get('orderid')
-                                    position_to_update.status = 'exit_pending'
-                                    position_to_update.exit_order_id = exit_order_id
-                                    position_to_update.exit_time = get_ist_now()
-                                    position_to_update.exit_reason = exit_reason
-                                    position_to_update.broker_order_status = 'open'
+                                exit_order_id = response.get('orderid')
+                                execution.status = 'exit_pending'
+                                execution.exit_order_id = exit_order_id
+                                execution.exit_time = get_ist_now()
+                                execution.exit_reason = exit_reason
+                                execution.broker_order_status = 'open'
 
-                                    db.session.commit()
+                                db.session.commit()
 
-                                    # Add exit order to poller to get actual fill price (same as entry orders)
-                                    from app.utils.order_status_poller import order_status_poller
-                                    order_status_poller.add_order(
-                                        execution_id=position_to_update.id,
-                                        account=position_to_update.account,
-                                        order_id=exit_order_id,
-                                        strategy_name=strategy_name
-                                    )
+                                # Add exit order to poller to get actual fill price
+                                from app.utils.order_status_poller import order_status_poller
+                                order_status_poller.add_order(
+                                    execution_id=execution.id,
+                                    account=account,
+                                    order_id=exit_order_id,
+                                    strategy_name=strategy_name
+                                )
 
-                                    with results_lock:
-                                        results.append({
-                                            'symbol': position.symbol,
-                                            'account': position.account.account_name,
-                                            'status': 'success',
-                                            'pnl': 0  # P&L will be calculated by poller when fill price is received
-                                        })
-                            else:
-                                error_msg = response.get('message', 'Unknown error') if response else 'No response'
+                                logger.debug(f"[SUPERTREND EXIT] Exit order {exit_order_id} placed for {execution.symbol} on {account.account_name}")
+
                                 with results_lock:
                                     results.append({
-                                        'symbol': position.symbol,
-                                        'account': position.account.account_name,
+                                        'symbol': execution.symbol,
+                                        'account': account.account_name,
+                                        'status': 'success',
+                                        'pnl': 0
+                                    })
+                            else:
+                                error_msg = response.get('message', 'Unknown error') if response else 'No response'
+                                logger.error(f"[SUPERTREND EXIT] Failed to place exit for {execution.symbol} on {account.account_name}: {error_msg}")
+                                with results_lock:
+                                    results.append({
+                                        'symbol': execution.symbol,
+                                        'account': account.account_name,
                                         'status': 'failed',
                                         'error': error_msg
                                     })
 
                         except Exception as e:
-                            logger.error(f"Error closing position {position.symbol}: {e}")
+                            logger.error(f"[SUPERTREND EXIT] Error closing execution {execution_id}: {e}", exc_info=True)
                             with results_lock:
                                 results.append({
-                                    'symbol': position.symbol,
-                                    'account': getattr(position.account, 'account_name', 'unknown'),
+                                    'execution_id': execution_id,
                                     'status': 'error',
                                     'error': str(e)
                                 })
@@ -657,13 +697,13 @@ class SupertrendExitService:
                 # Import create_app here to avoid circular import
                 from app import create_app
 
-                # Create and start threads
+                # Create and start threads - pass execution_id instead of position object
                 threads = []
-                for idx, position in enumerate(open_positions):
+                for idx, execution_id in enumerate(execution_ids):
                     thread = threading.Thread(
                         target=close_position_worker,
-                        args=(position, strategy.name, strategy.product_order_type, idx, strategy.user_id),
-                        name=f"SupertrendExit_{position.symbol}"
+                        args=(execution_id, strategy_name, product_type, idx, user_id, exit_reason),
+                        name=f"SupertrendExit_{execution_id}"
                     )
                     threads.append(thread)
                     thread.start()
@@ -677,7 +717,7 @@ class SupertrendExitService:
                 failed = len([r for r in results if r.get('status') in ['failed', 'error']])
                 total_pnl = sum(r.get('pnl', 0) for r in results if r.get('status') == 'success')
 
-                logger.debug(f"[SUPERTREND EXIT] Completed: {successful}/{len(open_positions)} positions closed, Total P&L: {total_pnl:.2f}")
+                logger.debug(f"[SUPERTREND EXIT] Completed: {successful}/{len(execution_ids)} positions closed, Total P&L: {total_pnl:.2f}")
 
             except Exception as e:
                 logger.error(f"Error triggering parallel exit: {e}", exc_info=True)
