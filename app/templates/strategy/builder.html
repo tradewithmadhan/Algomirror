@@ -819,7 +819,7 @@
         <div class="grid gap-2 mb-2" style="grid-template-columns: repeat(6, minmax(0, 1fr));">
             <div class="form-control">
                 <label class="label py-1"><span class="label-text text-xs font-semibold ">1. Instrument</span></label>
-                <select class="select select-bordered select-sm leg-instrument ">
+                <select class="select select-bordered select-sm leg-instrument " onchange="updateExpiryOptions(this.closest('.leg-item'))">
                     <option value="NIFTY">NIFTY</option>
                     <option value="BANKNIFTY">BANKNIFTY</option>
                     <option value="SENSEX">SENSEX</option>
@@ -1089,7 +1089,12 @@ function addLeg() {
     legCount++;
     clone.querySelector('.leg-number').textContent = legCount;
 
-    document.getElementById('strategyLegs').appendChild(clone);
+    const legsContainer = document.getElementById('strategyLegs');
+    legsContainer.appendChild(clone);
+
+    // Get the newly added leg and update expiry options
+    const newLeg = legsContainer.lastElementChild;
+    updateExpiryOptions(newLeg);
 
     // Apply lot field state based on current risk profile
     toggleLotFields();
@@ -1110,40 +1115,55 @@ function updateLegNumbers() {
     legCount = legs.length;
 }
 
+// Update expiry options based on instrument and product type
+// BANKNIFTY only has monthly contracts (no weekly expiries)
+// NIFTY and SENSEX options have weekly expiries, futures are monthly only
+function updateExpiryOptions(legItem) {
+    const expirySelect = legItem.querySelector('.leg-expiry');
+    const instrumentSelect = legItem.querySelector('.leg-instrument');
+    const productTypeSelect = legItem.querySelector('.leg-product-type');
+
+    if (!expirySelect || !instrumentSelect || !productTypeSelect) return;
+
+    const instrument = instrumentSelect.value;
+    const productType = productTypeSelect.value;
+
+    const currentWeekOpt = expirySelect.querySelector('option[value="current_week"]');
+    const nextWeekOpt = expirySelect.querySelector('option[value="next_week"]');
+
+    // Weekly expiries available for NIFTY and SENSEX options only
+    // BANKNIFTY only has monthly contracts, all futures are monthly only
+    const showWeekly = (instrument !== 'BANKNIFTY' && productType === 'options');
+
+    if (showWeekly) {
+        if (currentWeekOpt) currentWeekOpt.style.display = '';
+        if (nextWeekOpt) nextWeekOpt.style.display = '';
+    } else {
+        if (currentWeekOpt) currentWeekOpt.style.display = 'none';
+        if (nextWeekOpt) nextWeekOpt.style.display = 'none';
+
+        // If currently selected weekly, switch to current_month
+        if (expirySelect.value === 'current_week' || expirySelect.value === 'next_week') {
+            expirySelect.value = 'current_month';
+        }
+    }
+}
+
 // Toggle option-specific fields
 function toggleOptionFields(select) {
     const legItem = select.closest('.leg-item');
     const optionFields = legItem.querySelectorAll('.option-field');
-    const expirySelect = legItem.querySelector('.leg-expiry');
 
     if (select.value === 'futures') {
         // Hide option-specific fields for futures
         optionFields.forEach(field => field.style.display = 'none');
-
-        // Hide weekly expiry options for futures (no weekly futures exist)
-        if (expirySelect) {
-            const currentWeekOpt = expirySelect.querySelector('option[value="current_week"]');
-            const nextWeekOpt = expirySelect.querySelector('option[value="next_week"]');
-            if (currentWeekOpt) currentWeekOpt.style.display = 'none';
-            if (nextWeekOpt) nextWeekOpt.style.display = 'none';
-
-            // If currently selected weekly, switch to current_month
-            if (expirySelect.value === 'current_week' || expirySelect.value === 'next_week') {
-                expirySelect.value = 'current_month';
-            }
-        }
     } else {
         // Show option-specific fields for options
         optionFields.forEach(field => field.style.display = 'block');
-
-        // Show weekly expiry options for options
-        if (expirySelect) {
-            const currentWeekOpt = expirySelect.querySelector('option[value="current_week"]');
-            const nextWeekOpt = expirySelect.querySelector('option[value="next_week"]');
-            if (currentWeekOpt) currentWeekOpt.style.display = '';
-            if (nextWeekOpt) nextWeekOpt.style.display = '';
-        }
     }
+
+    // Update expiry options based on instrument and product type
+    updateExpiryOptions(legItem);
 }
 
 // Toggle price fields based on order type
@@ -2117,6 +2137,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             // Toggle option fields if futures
             {% if leg.product_type == 'futures' %}
             toggleOptionFields(legItem.querySelector('.leg-product-type'));
+            {% else %}
+            // Update expiry options for options (handles BANKNIFTY monthly-only)
+            updateExpiryOptions(legItem);
             {% endif %}
 
             // Mark as executed and freeze if leg is already executed
