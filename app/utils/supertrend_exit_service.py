@@ -529,23 +529,33 @@ class SupertrendExitService:
         from app.utils.openalgo_client import ExtendedOpenAlgoAPI
         from app.utils.order_status_poller import order_status_poller
 
+        strategy_id = strategy.id  # Save ID before context switch
+
         try:
             with app.app_context():
                 from app import db
 
-                # Re-fetch strategy in this context
-                strategy = Strategy.query.get(strategy.id)
+                # ATOMIC CHECK-AND-SET: Re-fetch strategy with row lock to prevent race conditions
+                # This ensures only ONE call can proceed for a given strategy
+                strategy = Strategy.query.with_for_update(nowait=False).get(strategy_id)
                 if not strategy:
-                    logger.error(f"[SUPERTREND EXIT] Strategy not found")
+                    logger.error(f"[SUPERTREND EXIT] Strategy {strategy_id} not found")
+                    return
+
+                # CHECK if already triggered - if yes, skip (another call already handling it)
+                if strategy.supertrend_exit_triggered:
+                    logger.info(f"[SUPERTREND EXIT] Strategy {strategy_id} already triggered, skipping duplicate exit")
+                    db.session.rollback()  # Release the lock
                     return
 
                 logger.info(f"[SUPERTREND EXIT] Initiating sequential exit for strategy {strategy.id} ({strategy.name})")
 
-                # Mark strategy as triggered and store the reason
+                # Mark strategy as triggered IMMEDIATELY and commit to release lock
+                # This prevents any other concurrent calls from proceeding
                 strategy.supertrend_exit_triggered = True
                 strategy.supertrend_exit_reason = exit_reason
                 strategy.supertrend_exit_triggered_at = get_ist_now()
-                db.session.commit()
+                db.session.commit()  # Commit and release lock - other calls will now see triggered=True
 
                 # Get all open positions that don't already have exit orders
                 open_executions = StrategyExecution.query.filter_by(
@@ -572,11 +582,26 @@ class SupertrendExitService:
                 account_clients = {}
                 success_count = 0
 
-                for execution in open_executions:
+                # Get execution IDs to process (we'll re-query each one with lock)
+                execution_ids = [ex.id for ex in open_executions]
+
+                for exec_id in execution_ids:
                     try:
-                        # Double-check exit_order_id hasn't been set (race condition protection)
+                        # ATOMIC: Re-query execution with row lock to prevent race conditions
+                        # This ensures only ONE thread can process this execution
+                        execution = StrategyExecution.query.with_for_update(nowait=False).get(exec_id)
+                        if not execution:
+                            logger.warning(f"[SUPERTREND EXIT] Execution {exec_id} not found")
+                            continue
+
+                        # Check if already has exit order (another thread may have processed it)
                         if execution.exit_order_id:
                             logger.debug(f"[SUPERTREND EXIT] Skipping {execution.symbol} - already has exit order {execution.exit_order_id}")
+                            continue
+
+                        # Check status is still 'entered'
+                        if execution.status != 'entered':
+                            logger.debug(f"[SUPERTREND EXIT] Skipping {execution.symbol} - status is {execution.status}")
                             continue
 
                         # Use the execution's account (NOT primary account)
@@ -620,12 +645,13 @@ class SupertrendExitService:
                         if response and response.get('status') == 'success':
                             order_id = response.get('orderid')
 
-                            # Update execution immediately
+                            # Update execution immediately and COMMIT to release lock
                             execution.status = 'exit_pending'
                             execution.exit_order_id = order_id
                             execution.exit_time = get_ist_now()
                             execution.exit_reason = exit_reason
                             execution.broker_order_status = 'open'
+                            db.session.commit()  # Commit each execution to release row lock
                             success_count += 1
 
                             # Add exit order to polling queue
@@ -640,13 +666,13 @@ class SupertrendExitService:
                         else:
                             error_msg = response.get('message', 'Unknown error') if response else 'No response'
                             logger.error(f"[SUPERTREND EXIT] Failed to place exit for {execution.symbol} on {account.account_name}: {error_msg}")
+                            db.session.rollback()  # Release lock on failure
 
                     except Exception as e:
-                        logger.error(f"[SUPERTREND EXIT] Exception closing {execution.symbol}: {str(e)}", exc_info=True)
+                        logger.error(f"[SUPERTREND EXIT] Exception closing execution {exec_id}: {str(e)}", exc_info=True)
+                        db.session.rollback()  # Release lock on exception
 
-                # Single commit at the end
-                db.session.commit()
-                logger.info(f"[SUPERTREND EXIT] Completed: {success_count}/{len(open_executions)} exit orders placed")
+                logger.info(f"[SUPERTREND EXIT] Completed: {success_count}/{len(execution_ids)} exit orders placed")
 
         except Exception as e:
             logger.error(f"[SUPERTREND EXIT] Error in trigger_sequential_exit: {e}", exc_info=True)
