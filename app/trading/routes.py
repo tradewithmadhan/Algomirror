@@ -715,11 +715,11 @@ def trading_hours():
     # Get all trading hours templates
     templates = TradingHoursTemplate.query.all()
     
-    # Get upcoming holidays
+    # Get upcoming holidays (show all for next 2 years)
     today = datetime.now().date()
     holidays = MarketHoliday.query.filter(
         MarketHoliday.holiday_date >= today
-    ).order_by(MarketHoliday.holiday_date).limit(10).all()
+    ).order_by(MarketHoliday.holiday_date).limit(50).all()
     
     # Get upcoming special sessions
     special_sessions = SpecialTradingSession.query.filter(
