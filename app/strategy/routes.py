@@ -1312,6 +1312,29 @@ def strategy_positions(strategy_id):
 
     from app.utils.openalgo_client import ExtendedOpenAlgoAPI
 
+    # Pre-fetch LTP for all unique symbols (fetch once, use for all accounts)
+    # This ensures consistent LTP across accounts for the same symbol
+    ltp_cache = {}
+    open_positions = [p for p in positions if p.status != 'exited']
+    unique_symbols = set((p.symbol, p.exchange) for p in open_positions)
+
+    if unique_symbols and open_positions:
+        # Use first available account to fetch LTP (all accounts get same market data)
+        first_account = open_positions[0].account
+        try:
+            client = ExtendedOpenAlgoAPI(
+                api_key=first_account.get_api_key(),
+                host=first_account.host_url
+            )
+            for symbol, exchange in unique_symbols:
+                try:
+                    quote = client.quotes(symbol=symbol, exchange=exchange)
+                    ltp_cache[(symbol, exchange)] = float(quote.get('data', {}).get('ltp', 0))
+                except Exception as e:
+                    logger.warning(f"[POSITIONS] Failed to fetch LTP for {symbol}: {e}")
+        except Exception as e:
+            logger.warning(f"[POSITIONS] Failed to create client for LTP fetch: {e}")
+
     data = []
     for position in positions:
         # Skip orders that were failed, pending, or have problematic broker status
@@ -1340,16 +1363,8 @@ def strategy_positions(strategy_id):
             pnl = position.realized_pnl or 0
         else:
             # Open position - calculate unrealized P&L
-            # Get current price for P&L calculation
-            try:
-                client = ExtendedOpenAlgoAPI(
-                    api_key=position.account.get_api_key(),
-                    host=position.account.host_url
-                )
-                quote = client.quotes(symbol=position.symbol, exchange=position.exchange)
-                ltp = float(quote.get('data', {}).get('ltp', position.entry_price))
-            except:
-                ltp = position.entry_price or 0
+            # Get current price from cache (pre-fetched for consistency across accounts)
+            ltp = ltp_cache.get((position.symbol, position.exchange), position.entry_price or 0)
 
             # Calculate P&L based on action
             quantity = position.quantity
