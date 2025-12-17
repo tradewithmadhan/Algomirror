@@ -574,7 +574,8 @@ async function loadAccountFunds() {
                 const funds = data.data;
 
                 const available = parseFloat(funds.availablecash) || 0;
-                const cash = available;
+                const collateral = parseFloat(funds.collateral) || 0;
+                const cash = available - collateral;
 
                 const availableEl = document.getElementById(`available-${account.id}`);
                 if (availableEl) {
