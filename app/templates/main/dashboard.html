@@ -132,12 +132,6 @@
                         </span>
                     </div>
                     <div class="flex justify-between">
-                        <span class="text-sm">Collateral:</span>
-                        <span class="font-semibold" id="collateral-{{ account.id }}">
-                            <span class="loading loading-spinner loading-xs"></span>
-                        </span>
-                    </div>
-                    <div class="flex justify-between">
                         <span class="text-sm">Cash:</span>
                         <span class="font-semibold" id="cash-{{ account.id }}">
                             <span class="loading loading-spinner loading-xs"></span>
@@ -594,11 +588,6 @@ async function loadAccountFunds() {
                     marginEl.textContent = `₹${formatInLakhs(margin)}`;
                 }
 
-                const collateralEl = document.getElementById(`collateral-${account.id}`);
-                if (collateralEl) {
-                    collateralEl.textContent = `₹${formatInLakhs(collateral)}`;
-                }
-
                 const cashEl = document.getElementById(`cash-${account.id}`);
                 if (cashEl) {
                     cashEl.textContent = `₹${formatInLakhs(cash)}`;
@@ -608,12 +597,10 @@ async function loadAccountFunds() {
             } else {
                 const availableEl = document.getElementById(`available-${account.id}`);
                 const marginEl = document.getElementById(`margin-${account.id}`);
-                const collateralEl = document.getElementById(`collateral-${account.id}`);
                 const cashEl = document.getElementById(`cash-${account.id}`);
 
                 if (availableEl) availableEl.textContent = '₹0.00L';
                 if (marginEl) marginEl.textContent = '₹0.00L';
-                if (collateralEl) collateralEl.textContent = '₹0.00L';
                 if (cashEl) cashEl.textContent = '₹0.00L';
             }
         } else {
@@ -624,12 +611,10 @@ async function loadAccountFunds() {
             if (account) {
                 const availableEl = document.getElementById(`available-${account.id}`);
                 const marginEl = document.getElementById(`margin-${account.id}`);
-                const collateralEl = document.getElementById(`collateral-${account.id}`);
                 const cashEl = document.getElementById(`cash-${account.id}`);
 
                 if (availableEl) availableEl.textContent = 'Error';
                 if (marginEl) marginEl.textContent = 'Error';
-                if (collateralEl) collateralEl.textContent = 'Error';
                 if (cashEl) cashEl.textContent = 'Error';
             }
         }
