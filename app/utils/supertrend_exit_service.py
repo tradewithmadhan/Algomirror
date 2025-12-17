@@ -233,6 +233,9 @@ class SupertrendExitService:
             from app import db
 
             try:
+                logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: Starting check_supertrend_exit")
+                logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: Config - timeframe={strategy.supertrend_timeframe}, period={strategy.supertrend_period}, multiplier={strategy.supertrend_multiplier}, exit_type={strategy.supertrend_exit_type}")
+
                 # Update last check time
                 self.monitoring_strategies[strategy.id] = datetime.now(pytz.timezone('Asia/Kolkata'))
 
@@ -242,6 +245,8 @@ class SupertrendExitService:
                     status='entered'
                 ).all()
 
+                logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: Found {len(open_positions)} positions with status='entered'")
+
                 # Filter out rejected/cancelled
                 open_positions = [
                     pos for pos in open_positions
@@ -249,22 +254,33 @@ class SupertrendExitService:
                            pos.broker_order_status in ['rejected', 'cancelled'])
                 ]
 
+                logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: After filtering rejected/cancelled: {len(open_positions)} positions")
+
                 if not open_positions:
-                    logger.debug(f"Strategy {strategy.id} has no open positions, skipping")
+                    logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: NO OPEN POSITIONS - skipping exit check")
                     return
+
+                for pos in open_positions:
+                    logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: Position {pos.id} - {pos.symbol}, leg_id={pos.leg_id}, qty={pos.quantity}, broker_status={getattr(pos, 'broker_order_status', 'N/A')}")
 
                 # Get set of leg IDs that have open positions
                 # A leg is considered "open" if ANY account has an open position for it
                 open_leg_ids = set(pos.leg_id for pos in open_positions if pos.leg_id)
-                logger.debug(f"Strategy {strategy.id}: {len(open_positions)} open positions across {len(open_leg_ids)} legs (leg_ids: {open_leg_ids})")
+                logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: {len(open_positions)} open positions across {len(open_leg_ids)} legs (leg_ids: {open_leg_ids})")
 
                 # Fetch combined spread data ONLY for legs with open positions
                 # This ensures closed legs don't affect the Supertrend calculation
                 spread_data = self.fetch_combined_spread_data(strategy, open_leg_ids=open_leg_ids)
 
-                if spread_data is None or len(spread_data) < strategy.supertrend_period + 5:
-                    logger.warning(f"Insufficient data for Supertrend calculation for strategy {strategy.id}")
+                if spread_data is None:
+                    logger.warning(f"[CHECK_EXIT] Strategy {strategy.id}: spread_data is None - cannot calculate Supertrend")
                     return
+
+                if len(spread_data) < strategy.supertrend_period + 5:
+                    logger.warning(f"[CHECK_EXIT] Strategy {strategy.id}: Insufficient data - got {len(spread_data)} bars, need {strategy.supertrend_period + 5}")
+                    return
+
+                logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: Got {len(spread_data)} bars of spread data")
 
                 # Calculate Supertrend on spread OHLC
                 # NOTE: Direction is calculated based on CLOSE price only (not high/low)
@@ -283,6 +299,9 @@ class SupertrendExitService:
                 latest_supertrend = trend[-1]
                 latest_direction = direction[-1]  # Direction based on CLOSE crossing Supertrend
 
+                logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: Supertrend values - close={latest_close:.2f}, ST={latest_supertrend:.2f}, direction={latest_direction} ({('BULLISH/UP' if latest_direction == -1 else 'BEARISH/DOWN')})")
+                logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: Exit type={strategy.supertrend_exit_type}, Looking for direction={-1 if strategy.supertrend_exit_type == 'breakout' else 1}")
+
                 # Check for exit signal based ONLY on close price vs Supertrend
                 # Exit triggers on candle close, executes immediately
                 #
@@ -297,6 +316,7 @@ class SupertrendExitService:
                     # Checked on candle close only, not intrabar
                     if latest_direction == -1:  # Bullish - price above supertrend
                         should_exit = True
+                        logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: BREAKOUT condition MET - direction=-1 (bullish)")
                         exit_reason = f'supertrend_breakout (Close: {latest_close:.2f}, ST: {latest_supertrend:.2f})'
                         logger.debug(f"Strategy {strategy.id}: Supertrend BREAKOUT - Close crossed above ST on candle close")
 
@@ -305,14 +325,14 @@ class SupertrendExitService:
                     # Checked on candle close only, not intrabar
                     if latest_direction == 1:  # Bearish - price below supertrend
                         should_exit = True
+                        logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: BREAKDOWN condition MET - direction=1 (bearish)")
                         exit_reason = f'supertrend_breakdown (Close: {latest_close:.2f}, ST: {latest_supertrend:.2f})'
-                        logger.debug(f"Strategy {strategy.id}: Supertrend BREAKDOWN - Close crossed below ST on candle close")
 
                 if should_exit:
-                    logger.debug(f"Triggering parallel exit for strategy {strategy.id} - Reason: {exit_reason}")
+                    logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: EXIT SIGNAL DETECTED - calling trigger_sequential_exit")
                     self.trigger_sequential_exit(strategy, exit_reason, app)
                 else:
-                    logger.debug(f"Strategy {strategy.id}: No exit signal (Direction: {latest_direction}, Type: {strategy.supertrend_exit_type})")
+                    logger.info(f"[CHECK_EXIT] Strategy {strategy.id}: NO EXIT SIGNAL - direction={latest_direction}, exit_type={strategy.supertrend_exit_type}, needed={-1 if strategy.supertrend_exit_type == 'breakout' else 1}")
 
             except Exception as e:
                 logger.error(f"Error checking Supertrend exit for strategy {strategy.id}: {e}", exc_info=True)
