@@ -62,7 +62,11 @@
       "Bash(\".venv\\Scripts\\python.exe\" -m py_compile app/strategy/routes.py)",
       "Bash(\".venv\\Scripts\\python.exe\" -m py_compile app/utils/risk_manager.py app/main/routes.py app/strategy/routes.py)",
       "Bash(\".venv\\Scripts\\python.exe\" -m py_compile app/trading/routes.py)",
-      "Bash(\".venv\\Scripts\\python.exe\" -m py_compile app/utils/supertrend_exit_service.py)"
+      "Bash(\".venv\\Scripts\\python.exe\" -m py_compile app/utils/supertrend_exit_service.py)",
+      "Bash(\".venv\\\\Scripts\\\\python.exe\" -m py_compile \"D:\\\\AI Bootcamp 2025\\\\Session31\\\\algomirror\\\\app\\\\utils\\\\strategy_executor.py\")",
+      "Bash(\".venv\\\\Scripts\\\\python.exe\" -m py_compile:*)",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)"
     ],
     "deny": [],
     "ask": []
