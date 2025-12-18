@@ -115,7 +115,13 @@
                         <h3 class="font-semibold text-lg">{{ account.account_name }}</h3>
                         <p class="text-sm text-base-content/60">{{ account.broker_name }}</p>
                     </div>
-                    <span class="badge badge-success badge-sm">Connected</span>
+                    {% set status = (account.connection_status or 'unknown').lower() %}
+                    {% set badge_class = 'badge-success' if status == 'connected'
+                        else 'badge-error' if status == 'failed'
+                        else 'badge-warning' %}
+                    <span class="badge {{ badge_class }} badge-sm">
+                        {{ status.title() }}
+                    </span>
                 </div>
 
                 <div class="space-y-2">
