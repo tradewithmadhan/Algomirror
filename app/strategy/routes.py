@@ -868,6 +868,43 @@ def convert_leg_to_market(strategy_id, leg_id):
                     execution.order_id = new_order_id
                     execution.broker_order_status = 'complete'  # Market orders execute immediately
                     execution.status = 'entered'  # Order is now entered
+
+                    # CRITICAL: Fetch actual execution price from broker
+                    # Market orders may execute at different price than original limit
+                    import time
+                    time.sleep(0.5)  # Brief delay for order to settle
+
+                    # Try up to 3 times to get the actual average_price
+                    actual_price = None
+                    for price_attempt in range(3):
+                        try:
+                            order_status = client.orderstatus(
+                                order_id=new_order_id,
+                                strategy=f"Strategy_{strategy.id}"
+                            )
+                            if order_status.get('status') == 'success':
+                                order_data = order_status.get('data', {})
+                                avg_price = order_data.get('average_price', 0)
+                                if avg_price and avg_price > 0:
+                                    actual_price = avg_price
+                                    execution.entry_price = actual_price
+                                    logger.info(f"[CONVERT] Order {new_order_id} actual price: Rs.{actual_price}")
+                                    break
+                            if price_attempt < 2:
+                                time.sleep(1)  # Wait before retry
+                        except Exception as price_err:
+                            logger.warning(f"Error fetching price for order {new_order_id}: {price_err}")
+
+                    if not actual_price:
+                        logger.warning(f"[CONVERT] Could not fetch actual price for order {new_order_id}, will be updated by poller")
+                        # Add to poller to fetch price later
+                        order_status_poller.add_order(
+                            execution_id=execution.id,
+                            account=account,
+                            order_id=new_order_id,
+                            strategy_name=f"Strategy_{strategy.id}"
+                        )
+
                     converted_count += 1
                     logger.debug(f"Placed market order {new_order_id} for leg {leg_id} (converted from limit order)")
                 else:

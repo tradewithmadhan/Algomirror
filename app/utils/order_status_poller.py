@@ -223,27 +223,33 @@ class OrderStatusPoller:
                     is_entry_order = execution.order_id == order_id and execution.exit_order_id != order_id
                     is_exit_order = execution.exit_order_id == order_id
 
-                    # If average_price is missing/zero, wait 1 second and re-fetch
+                    # If average_price is missing/zero, retry multiple times with increasing delays
                     # Some brokers return complete status before average_price is populated
                     if not avg_price or avg_price == 0:
-                        logger.warning(f"[PRICE MISSING] Order {order_id} complete but average_price is {avg_price}, waiting 1s to re-fetch...")
-                        sleep(1)
+                        logger.warning(f"[PRICE MISSING] Order {order_id} complete but average_price is {avg_price}, retrying...")
 
-                        # Re-fetch order status after delay (respecting rate limit)
-                        retry_response = client.orderstatus(order_id=order_id, strategy=strategy_name)
-                        self.last_check_time[account_key] = datetime.utcnow()
+                        # Try up to 3 times with increasing delays (1s, 2s, 3s)
+                        for price_retry in range(3):
+                            sleep(price_retry + 1)  # 1s, 2s, 3s delays
 
-                        if retry_response.get('status') == 'success':
-                            retry_data = retry_response.get('data', {})
-                            retry_avg_price = retry_data.get('average_price', 0)
+                            retry_response = client.orderstatus(order_id=order_id, strategy=strategy_name)
+                            self.last_check_time[account_key] = datetime.utcnow()
 
-                            if retry_avg_price and retry_avg_price > 0:
-                                avg_price = retry_avg_price
-                                logger.info(f"[PRICE FETCHED] Order {order_id} average_price after retry: Rs.{avg_price}")
+                            if retry_response.get('status') == 'success':
+                                retry_data = retry_response.get('data', {})
+                                retry_avg_price = retry_data.get('average_price', 0)
+
+                                if retry_avg_price and retry_avg_price > 0:
+                                    avg_price = retry_avg_price
+                                    logger.info(f"[PRICE FETCHED] Order {order_id} average_price after retry {price_retry + 1}: Rs.{avg_price}")
+                                    break
+                                else:
+                                    logger.warning(f"[PRICE RETRY {price_retry + 1}] Order {order_id} average_price still {retry_avg_price}")
                             else:
-                                logger.warning(f"[PRICE STILL MISSING] Order {order_id} average_price still {retry_avg_price} after retry")
-                        else:
-                            logger.warning(f"[RETRY FAILED] Failed to re-fetch order {order_id}: {retry_response.get('message')}")
+                                logger.warning(f"[RETRY FAILED] Failed to re-fetch order {order_id}: {retry_response.get('message')}")
+
+                        if not avg_price or avg_price == 0:
+                            logger.error(f"[PRICE FAILED] Order {order_id} could not get average_price after 3 retries!")
 
                     if is_entry_order:
                         execution.status = 'entered'
