@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ./configure \
         --prefix=/usr \
         --build="$(dpkg-architecture -q DEB_BUILD_GNU_TYPE)" && \
-    make -j"$(nproc)" && \
+    MAKEFLAGS= make -j1 && \
     make install && \
     \
     # Cleanup build artifacts
